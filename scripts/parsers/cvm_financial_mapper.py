@@ -15,6 +15,7 @@ ACCOUNT_MAPPING = {
     "short_debt": ["2.01.04", "2.01.04.01", "2.01.04.02"],
     "long_debt": ["2.02.01", "2.02.01.01", "2.02.01.02"],
     "operating_cash_flow": ["6.01"],
+    "depreciation_amortization": ["6.01.01.01"],
     "capex": ["6.02.01", "6.02.02"],
 }
 

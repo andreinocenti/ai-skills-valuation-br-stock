@@ -12,5 +12,8 @@
   {"ticker":"SAPR11","name":"COMPANHIA DE SANEAMENTO DO PARANA - SANEPAR","cvm_code":"18627","sector":"Saneamento","subsector":"Agua e saneamento","segment":"Utilidade publica","share_class":"UNIT","currency":"BRL","ri_url":"https://ri.sanepar.com.br"},
   {"ticker":"SBSP3","name":"CIA SANEAMENTO BASICO EST SAO PAULO - SABESP","cvm_code":"14443","sector":"Saneamento","subsector":"Agua e saneamento","segment":"Utilidade publica","share_class":"ON","currency":"BRL","ri_url":"https://ri.sabesp.com.br"},
   {"ticker":"ITSA4","name":"ITAUSA S.A.","cvm_code":"7617","sector":"Holding","subsector":"Holdings diversificadas","segment":"Holding","share_class":"PN","currency":"BRL","ri_url":"https://ri.itausa.com.br"},
-  {"ticker":"BRAP4","name":"BRADESPAR S.A.","cvm_code":"18724","sector":"Holding","subsector":"Holdings diversificadas","segment":"Holding","share_class":"PN","currency":"BRL","ri_url":"https://www.bradespar.com.br"}
+  {"ticker":"BRAP4","name":"BRADESPAR S.A.","cvm_code":"18724","sector":"Holding","subsector":"Holdings diversificadas","segment":"Holding","share_class":"PN","currency":"BRL","ri_url":"https://www.bradespar.com.br"},
+  {"ticker":"KLBN4","name":"KLABIN S.A.","cvm_code":"12653","cnpj":"89.637.490/0001-45","sector":"Papel e Celulose","subsector":"Madeira e Papel","segment":"Papel e Celulose","share_class":"PN","currency":"BRL","ri_url":"https://ri.klabin.com.br"},
+  {"ticker":"KLBN3","name":"KLABIN S.A.","cvm_code":"12653","cnpj":"89.637.490/0001-45","sector":"Papel e Celulose","subsector":"Madeira e Papel","segment":"Papel e Celulose","share_class":"ON","currency":"BRL","ri_url":"https://ri.klabin.com.br"},
+  {"ticker":"KLBN11","name":"KLABIN S.A.","cvm_code":"12653","cnpj":"89.637.490/0001-45","sector":"Papel e Celulose","subsector":"Madeira e Papel","segment":"Papel e Celulose","share_class":"UNIT","currency":"BRL","ri_url":"https://ri.klabin.com.br"}
 ]

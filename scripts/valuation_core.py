@@ -20,6 +20,7 @@ SOURCE_AUXILIARY = "auxiliar"
 SOURCE_ESTIMATED = "estimado"
 SOURCE_INFERRED = "inferido"
 SOURCE_NOT_FOUND = "nao_encontrado"
+CALCULATION_ENGINE_VERSION = "valuation-br-stock-2026-04-30-sector-v2"
 
 VERDICTS = [
     "Evitar",
@@ -52,6 +53,7 @@ CVM_ACCOUNT_MAP = {
     "gross_debt_short": ["2.01.04", "2.01.04.01", "2.01.04.02"],
     "gross_debt_long": ["2.02.01", "2.02.01.01", "2.02.01.02"],
     "operating_cash_flow": ["6.01"],
+    "depreciation_amortization": ["6.01.01.01"],
     "capex": ["6.02.01", "6.02.02"],
 }
 
@@ -203,12 +205,28 @@ def classify_dividend_event(amount: float, median_amount: float | None = None, d
     }
 
 
-def normalize_dividend_events(raw_amounts: list[float]) -> list[dict[str, Any]]:
-    med = median(raw_amounts)
+def normalize_dividend_events(raw_amounts: list[Any]) -> list[dict[str, Any]]:
+    amounts = [
+        float(item.get("amount_per_share", item.get("amount", 0))) if isinstance(item, dict) else float(item)
+        for item in raw_amounts
+        if (item.get("amount_per_share", item.get("amount")) if isinstance(item, dict) else item) is not None
+    ]
+    med = median(amounts)
     events = []
-    for index, amount in enumerate(raw_amounts):
-        item = classify_dividend_event(float(amount), med)
-        item.update({"date": str(index + 1), "source_status": SOURCE_AUXILIARY})
+    for index, raw in enumerate(raw_amounts):
+        if isinstance(raw, dict):
+            amount = raw.get("amount_per_share", raw.get("amount"))
+            if amount is None:
+                continue
+            item = classify_dividend_event(float(amount), med, raw.get("description", ""))
+            item.update({
+                "date": raw.get("date") or str(index + 1),
+                "year": raw.get("year"),
+                "source_status": raw.get("source_status", SOURCE_AUXILIARY),
+            })
+        else:
+            item = classify_dividend_event(float(raw), med)
+            item.update({"date": str(index + 1), "year": None, "source_status": SOURCE_AUXILIARY})
         events.append(item)
     return events
 
@@ -259,7 +277,7 @@ def calculate_indicators(input_data: dict[str, Any]) -> dict[str, Any]:
     dpas = [row.get("dpa") for row in yearly if row.get("dpa") is not None]
     dividend_events = data.get("dividend_events") or normalize_dividend_events(data.get("market_data", {}).get("dividend_history") or [])
     quality = assess_data_quality(data, yearly)
-    return {
+    output = {
         "ticker": data.get("ticker"),
         "yearly": yearly,
         "latest": latest_indicators,
@@ -275,6 +293,8 @@ def calculate_indicators(input_data: dict[str, Any]) -> dict[str, Any]:
         },
         "data_quality": quality,
     }
+    output["dividends"]["policy"] = dividend_policy(output, current_price)
+    return output
 
 
 def dividend_stability(values: list[float]) -> str:
@@ -292,6 +312,64 @@ def dividend_stability(values: list[float]) -> str:
     if dispersion < 0.55:
         return "medium"
     return "low"
+
+
+def dividend_policy(indicators: dict[str, Any], current_price: float | None = None) -> dict[str, Any]:
+    yearly = indicators.get("yearly", [])
+    dpas = [row.get("dpa") for row in yearly if row.get("dpa") is not None]
+    positive_dpas = [value for value in dpas if value and value > 0]
+    latest_ind = indicators.get("latest", {})
+    divs = indicators.get("dividends", {})
+    stability = divs.get("stability", "none")
+    coverage = safe_div(len(positive_dpas), len(dpas)) or 0.0
+    average_dpa = average(positive_dpas) or 0.0
+    median_dpa = median(positive_dpas) or 0.0
+    latest_dpa = latest_ind.get("dpa") or 0.0
+    candidates = [value for value in (median_dpa, average_dpa, latest_dpa) if value > 0]
+    if not candidates:
+        selected = 0.0
+    elif stability == "high":
+        selected = min(latest_dpa or max(candidates), average_dpa or max(candidates), median_dpa or max(candidates)) * 0.95
+    elif stability == "medium":
+        selected = min(median_dpa or max(candidates), average_dpa or max(candidates)) * 0.90
+    else:
+        selected = min(median_dpa or max(candidates), average_dpa or max(candidates)) * 0.70
+
+    sustainable_caps = []
+    if latest_ind.get("lpa") and latest_ind["lpa"] > 0:
+        sustainable_caps.append(latest_ind["lpa"] * 0.75)
+    if latest_ind.get("fcf_per_share") and latest_ind["fcf_per_share"] > 0:
+        sustainable_caps.append(latest_ind["fcf_per_share"] * 0.75)
+    if sustainable_caps:
+        selected = min(selected, min(sustainable_caps))
+
+    payout = latest_ind.get("payout_adjusted")
+    suitable = stability in ("high", "medium") and coverage >= 0.6 and selected > 0 and (payout is None or payout <= 1.0)
+    if stability == "low" or coverage < 0.6 or (payout and payout > 1.0):
+        reliability = "low"
+        method_action = "calculate_but_exclude_from_weighted_fair_value"
+        suitable = False
+    elif stability == "medium":
+        reliability = "medium"
+        method_action = "include_with_caution"
+    else:
+        reliability = "high"
+        method_action = "include"
+
+    return {
+        "stability": stability,
+        "coverage": coverage,
+        "annual_dpa_mean": average_dpa,
+        "annual_dpa_median": median_dpa,
+        "latest_dpa": latest_dpa,
+        "safe_dividend_per_share": selected,
+        "safe_yield_on_current_price": safe_div(selected, current_price) or 0.0,
+        "yield_mean_on_current_price": safe_div(average_dpa, current_price) or 0.0,
+        "yield_median_on_current_price": safe_div(median_dpa, current_price) or 0.0,
+        "suitable_for_bazin_ddm_weight": suitable,
+        "income_method_reliability": reliability,
+        "method_action": method_action,
+    }
 
 
 def assess_data_quality(data: dict[str, Any], yearly: list[dict[str, Any]]) -> dict[str, Any]:
@@ -348,7 +426,7 @@ def sector_key(company: dict[str, Any]) -> str:
         return "insurance"
     if any(word in text for word in ("energia", "eletric", "utilidade", "saneamento")):
         return "utilities"
-    if any(word in text for word in ("petroleo", "miner", "sider", "commodity")):
+    if any(word in text for word in ("petroleo", "miner", "sider", "commodity", "papel", "celulose")):
         return "commodities"
     if any(word in text for word in ("varejo", "comercio")):
         return "retail"
@@ -407,11 +485,14 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
     payouts = [row.get("dividends_recurring", row.get("dividends_paid", 0)) / row.get("net_income_adjusted", row.get("net_income", 1)) for row in financials if row.get("net_income_adjusted", row.get("net_income", 0)) > 0]
     margin = average(margins) or 0.08
     payout = average(payouts) or 0.35
+    operating = historical_operating_profile(normalized_rows)
     return {
         "conservative": {
             "revenue_growth": clamp(revenue_growth - 0.02, -0.03, 0.18),
             "net_income_growth": clamp(income_growth - 0.03, -0.05, 0.18),
             "margin": clamp(margin - 0.015, 0.01, 0.45),
+            "ebitda_margin": clamp(operating["ebitda_margin"] - 0.015, 0.01, 0.70),
+            "ebit_margin": clamp(operating["ebit_margin"] - 0.015, 0.0, 0.60),
             "payout": clamp(payout - 0.08, 0.0, 0.85),
             "discount_rate": required_return + 0.015,
             "terminal_growth": 0.025,
@@ -421,6 +502,8 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "revenue_growth": clamp(revenue_growth, -0.01, 0.22),
             "net_income_growth": clamp(income_growth, -0.02, 0.22),
             "margin": clamp(margin, 0.01, 0.50),
+            "ebitda_margin": clamp(operating["ebitda_margin"], 0.01, 0.70),
+            "ebit_margin": clamp(operating["ebit_margin"], 0.0, 0.60),
             "payout": clamp(payout, 0.0, 0.90),
             "discount_rate": required_return,
             "terminal_growth": 0.035,
@@ -430,11 +513,24 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "revenue_growth": clamp(revenue_growth + 0.02, 0.0, 0.28),
             "net_income_growth": clamp(income_growth + 0.02, 0.0, 0.28),
             "margin": clamp(margin + 0.015, 0.01, 0.55),
+            "ebitda_margin": clamp(operating["ebitda_margin"] + 0.015, 0.01, 0.70),
+            "ebit_margin": clamp(operating["ebit_margin"] + 0.015, 0.0, 0.60),
             "payout": clamp(payout + 0.04, 0.0, 0.95),
             "discount_rate": max(required_return - 0.01, 0.08),
             "terminal_growth": 0.045,
             "years": years,
         },
+    }
+
+
+def historical_operating_profile(financials: list[dict[str, Any]]) -> dict[str, float]:
+    ebitda_margins = [safe_div(row.get("ebitda"), row.get("revenue")) for row in financials]
+    ebit_margins = [safe_div(row.get("ebit"), row.get("revenue")) for row in financials]
+    net_margins = [safe_div(row.get("net_income_adjusted", row.get("net_income")), row.get("revenue")) for row in financials]
+    net_margin = median(net_margins) or average(net_margins) or 0.08
+    return {
+        "ebitda_margin": median(ebitda_margins) or average(ebitda_margins) or min(net_margin + 0.08, 0.70),
+        "ebit_margin": median(ebit_margins) or average(ebit_margins) or min(net_margin + 0.04, 0.60),
     }
 
 
@@ -451,8 +547,14 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
     for offset in range(1, scenario["years"] + 1):
         revenue *= 1 + scenario["revenue_growth"]
         net_income = revenue * scenario["margin"]
-        ebitda = revenue * min(scenario["margin"] + 0.08, 0.70)
-        ebit = revenue * min(scenario["margin"] + 0.04, 0.60)
+        ebitda_margin = scenario.get("ebitda_margin")
+        ebit_margin = scenario.get("ebit_margin")
+        if ebitda_margin is None:
+            ebitda_margin = safe_div(base_row.get("ebitda"), base_row.get("revenue")) or min(scenario["margin"] + 0.08, 0.70)
+        if ebit_margin is None:
+            ebit_margin = safe_div(base_row.get("ebit"), base_row.get("revenue")) or min(scenario["margin"] + 0.04, 0.60)
+        ebitda = revenue * clamp(ebitda_margin, 0.01, 0.70)
+        ebit = revenue * clamp(ebit_margin, 0.0, 0.60)
         dividends = net_income * scenario["payout"]
         da = revenue * da_ratio
         capex = revenue * capex_ratio
@@ -467,6 +569,8 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
             "revenue_growth": scenario["revenue_growth"],
             "ebitda": ebitda,
             "ebitda_margin": safe_div(ebitda, revenue),
+            "ebit": ebit,
+            "ebit_margin": safe_div(ebit, revenue),
             "net_income": net_income,
             "net_margin": scenario["margin"],
             "lpa": per_share(net_income, shares),
@@ -499,20 +603,28 @@ def method_reliability(method: str, data: dict[str, Any], indicators: dict[str, 
         return "not_applicable"
     if method == "ev_ebitda" and sector in ("banks", "insurance"):
         return "low"
-    if method in ("residual_income", "p_vp") and sector in ("banks", "insurance"):
+    if method in ("residual_income", "p_vp") and sector == "banks":
         return "high"
-    if method in ("bazin", "ddm") and indicators.get("dividends", {}).get("stability") == "high":
+    if method in ("p_vp", "ddm") and sector == "insurance":
         return "high"
+    if method in ("sotp", "nav") and sector == "holding":
+        if sum_sotp(data) or data.get("asset_values"):
+            return "high"
+        return "not_available"
+    if method in ("bazin", "ddm"):
+        return indicators.get("dividends", {}).get("policy", {}).get("income_method_reliability", "low")
     return "medium"
 
 
 def sector_method_weights(sector: str) -> dict[str, float]:
-    if sector in ("banks", "insurance"):
+    if sector == "banks":
         return {"residual_income": 0.35, "p_vp": 0.30, "ddm": 0.20, "graham": 0.15}
+    if sector == "insurance":
+        return {"p_vp": 0.30, "ddm": 0.25, "residual_income": 0.20, "graham": 0.15, "multiples": 0.10}
     if sector == "utilities":
-        return {"ddm": 0.25, "bazin": 0.15, "dcf_fcfe": 0.25, "dcf_fcff": 0.25, "graham": 0.10}
+        return {"ddm": 0.20, "bazin": 0.10, "dcf_fcfe": 0.25, "dcf_fcff": 0.25, "multiples": 0.10, "graham": 0.10}
     if sector == "commodities":
-        return {"dcf_fcff": 0.35, "multiples": 0.25, "dcf_fcfe": 0.25, "ddm": 0.10, "graham": 0.05}
+        return {"normalized_ev_ebitda": 0.35, "dcf_fcff": 0.30, "multiples": 0.20, "dcf_fcfe": 0.10, "graham": 0.05}
     if sector == "retail":
         return {"dcf_fcff": 0.35, "dcf_fcfe": 0.25, "multiples": 0.25, "graham": 0.15}
     if sector == "holding":
@@ -534,6 +646,16 @@ def bazin_value_for_fair_value(bazin: dict[str, float]) -> float | None:
     return bazin.get("0.08") or bazin.get("0.1") or average(list(bazin.values()))
 
 
+def income_method_weight_value(value: float | None, policy: dict[str, Any], sector: str) -> float | None:
+    if value is None:
+        return None
+    if not policy.get("suitable_for_bazin_ddm_weight", False):
+        return None
+    if sector == "commodities" and policy.get("income_method_reliability") != "high":
+        return None
+    return value
+
+
 def multiple_implied_value(data: dict[str, Any], latest_ind: dict[str, Any]) -> float | None:
     peers = data.get("peers") or []
     if not peers:
@@ -545,6 +667,29 @@ def multiple_implied_value(data: dict[str, Any], latest_ind: dict[str, Any]) -> 
     if peer_pvp and latest_ind.get("vpa"):
         return peer_pvp * latest_ind["vpa"]
     return None
+
+
+def normalized_ev_ebitda_value(data: dict[str, Any], shares: float) -> float | None:
+    if shares <= 0:
+        return None
+    financials = order_years(data.get("financials", []))
+    if not financials:
+        return None
+    ebitdas = [row.get("ebitda") for row in financials if row.get("ebitda") and row.get("ebitda") > 0]
+    normalized_ebitda = median(ebitdas) or average(ebitdas)
+    if not normalized_ebitda:
+        return None
+    sector = sector_key(data.get("company", {}))
+    default_multiple = 5.5 if sector == "commodities" else 6.5
+    peer_multiple = average([peer.get("ev_ebitda") for peer in data.get("peers", [])])
+    multiple = peer_multiple or data.get("normalized_ev_ebitda_multiple") or default_multiple
+    net_debt = latest(financials).get("net_debt", latest(financials).get("gross_debt", 0) - latest(financials).get("cash", 0))
+    equity_value = normalized_ebitda * multiple - net_debt
+    return safe_div(equity_value, shares)
+
+
+def holding_methods_available(data: dict[str, Any]) -> bool:
+    return bool(data.get("sotp_parts") or data.get("asset_values"))
 
 
 def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
@@ -559,26 +704,17 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     sector = sector_key(data.get("company", {}))
     scenarios = build_scenarios(data, indicators)
     dynamic_mos = dynamic_margin_of_safety(data, indicators)
-    safe_dividend = min(
-        value for value in [
-            indicators.get("dividends", {}).get("dpa_mean"),
-            indicators.get("dividends", {}).get("dpa_median"),
-            latest_ind.get("dpa"),
-        ]
-        if value is not None
-    ) if any(value is not None for value in [
-        indicators.get("dividends", {}).get("dpa_mean"),
-        indicators.get("dividends", {}).get("dpa_median"),
-        latest_ind.get("dpa"),
-    ]) else 0.0
-    safe_dividend *= 0.95 if indicators.get("dividends", {}).get("stability") != "low" else 0.75
+    requested_mos = data.get("margin_of_safety", 0.20)
+    div_policy = indicators.get("dividends", {}).get("policy", {})
+    safe_dividend = div_policy.get("safe_dividend_per_share", 0.0)
     graham = None
     if (latest_ind.get("lpa") or 0) > 0 and (latest_ind.get("vpa") or 0) > 0:
         graham = math.sqrt(22.5 * latest_ind["lpa"] * latest_ind["vpa"])
     bazin = {str(yield_rate): safe_dividend / yield_rate for yield_rate in data.get("desired_dividend_yields", [0.06, 0.08, 0.10, 0.12]) if yield_rate > 0}
     growth = scenarios["base"]["net_income_growth"]
     p_l = latest_ind.get("p_l")
-    lynch = ((growth + (safe_dividend / current_price if current_price else 0)) / p_l) if p_l and p_l > 0 else None
+    dividend_yield = safe_div(safe_dividend, current_price) if current_price else 0
+    lynch = (((growth * 100) + ((dividend_yield or 0) * 100)) / p_l) if p_l and p_l > 0 else None
     ddm = safe_dividend * (1 + growth) / (required_return - scenarios["base"]["terminal_growth"]) if required_return > scenarios["base"]["terminal_growth"] else None
     scenario_results = {}
     fair_values = {}
@@ -588,21 +724,27 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         fcff_value = discount_cash_flows([row["fcff"] for row in projections], scenario["discount_rate"], scenario["terminal_growth"])
         fcfe_price = safe_div(fcfe_value, shares)
         fcff_price = safe_div((fcff_value or 0) - last.get("net_debt", 0), shares) if fcff_value is not None else None
+        residual_price = residual_income_value(last, required_return, scenario["net_income_growth"], shares)
         method_map = {
             "graham": graham,
-            "ddm": ddm,
-            "bazin": bazin_value_for_fair_value(bazin),
+            "ddm": income_method_weight_value(ddm, div_policy, sector),
+            "bazin": income_method_weight_value(bazin_value_for_fair_value(bazin), div_policy, sector),
             "dcf_fcfe": fcfe_price,
             "dcf_fcff": fcff_price,
-            "residual_income": residual_income_value(last, required_return, growth, shares),
+            "residual_income": residual_price,
             "p_vp": latest_ind.get("vpa"),
             "multiples": multiple_implied_value(data, latest_ind),
+            "normalized_ev_ebitda": normalized_ev_ebitda_value(data, shares) if sector == "commodities" else None,
             "sotp": safe_div(sum_sotp(data), shares) if sum_sotp(data) else None,
             "nav": net_asset_value(data, shares),
         }
         method_values = list(method_map.values())
-        if sector in ("banks", "insurance"):
+        if sector == "banks":
             method_values = [graham, ddm, method_map["residual_income"], latest_ind.get("vpa")]
+        if sector == "insurance":
+            method_values = [graham, ddm, method_map["residual_income"], latest_ind.get("vpa"), method_map["multiples"]]
+        if sector == "holding" and not holding_methods_available(data):
+            method_values = [value for key, value in method_map.items() if key not in ("sotp", "nav")]
         fair = weighted_fair_value(method_map, sector_method_weights(sector)) or average(method_values) or 0.0
         fair_values[name] = fair
         scenario_results[name] = {
@@ -610,13 +752,22 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "projections": projections,
             "dcf_fcfe_price": fcfe_price,
             "dcf_fcff_price": fcff_price,
+            "residual_income_price": residual_price,
             "fair_value": fair,
         }
     fair_base = fair_values["base"]
-    projected_fair = scenario_results["base"]["fair_value"] * ((1 + growth) ** data.get("investment_horizon_years", 5))
-    projected_ceiling = projected_fair / ((1 + required_return) ** data.get("investment_horizon_years", 5)) * (1 - dynamic_mos)
+    base_ceiling = fair_base * (1 - requested_mos)
+    risk_adjusted_ceiling = fair_base * (1 - dynamic_mos)
+    projected_ceiling_prices = calculate_projected_ceiling_prices(
+        scenario_results["base"]["fair_value"],
+        growth,
+        required_return,
+        requested_mos,
+        data.get("investment_horizon_years", 5),
+    )
+    projected_ceiling = projected_ceiling_prices[-1]["ceiling_price"] if projected_ceiling_prices else None
     residual_income = last.get("net_income_adjusted", last.get("net_income", 0)) - required_return * last.get("equity", 0)
-    residual_value = residual_income_value(last, required_return, growth, shares)
+    residual_value = scenario_results["base"]["residual_income_price"]
     multiples = compare_peers(data, latest_ind)
     reverse_growth = reverse_dcf_growth(current_price, safe_dividend, required_return)
     quality_score = score_quality(indicators, sector)
@@ -630,10 +781,14 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         "fair_value_base": fair_base,
         "fair_value_conservative": fair_values["conservative"],
         "fair_value_optimistic": fair_values["optimistic"],
-        "suggested_ceiling_price": fair_base * (1 - dynamic_mos),
+        "suggested_ceiling_price": base_ceiling,
+        "base_ceiling_price": base_ceiling,
+        "risk_adjusted_ceiling_price": risk_adjusted_ceiling,
         "projected_ceiling_price": projected_ceiling,
+        "projected_ceiling_prices": projected_ceiling_prices,
         "margin_of_safety": safe_div(fair_base - current_price, fair_base) or 0.0,
         "required_margin_of_safety": dynamic_mos,
+        "base_margin_of_safety": requested_mos,
         "dividend_safe_yield": safe_div(safe_dividend, current_price) or 0.0,
         "projected_yield_on_cost_year_5": safe_div(scenario_results["base"]["projections"][-1]["dividend_per_share"], current_price) or 0.0,
         "quality_score": quality_score,
@@ -641,6 +796,14 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         "risk_level": risk_level,
         "verdict": verdict,
         "confidence": indicators["data_quality"]["confidence"],
+        "calculation_metadata": {
+            "engine_version": CALCULATION_ENGINE_VERSION,
+            "sector_key": sector,
+            "sector_weights": sector_method_weights(sector),
+            "required_return": required_return,
+            "base_margin_of_safety": requested_mos,
+            "risk_adjusted_margin_of_safety": dynamic_mos,
+        },
         "company": data.get("company", {}),
         "sources": data.get("sources", []),
         "ttm": data.get("ttm"),
@@ -650,21 +813,23 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         "diagnosis": {
             "multiples": latest_ind,
             "safe_dividend_per_share": safe_dividend,
+            "dividend_policy": div_policy,
             "residual_income": residual_income,
             "sector": sector,
         },
         "valuation": {
             "graham": {"fair_value": graham, "reliability": method_reliability("graham", data, indicators)},
-            "bazin": {"safe_dividend_per_share": safe_dividend, "ceiling_prices": bazin, "reliability": method_reliability("bazin", data, indicators)},
+            "bazin": {"safe_dividend_per_share": safe_dividend, "ceiling_prices": bazin, "reliability": method_reliability("bazin", data, indicators), "policy": div_policy},
             "peter_lynch": {"score": lynch, "reliability": method_reliability("lynch", data, indicators)},
-            "ddm": {"fair_value": ddm, "required_return": required_return, "growth": growth, "reliability": method_reliability("ddm", data, indicators)},
+            "ddm": {"fair_value": ddm, "required_return": required_return, "growth": growth, "reliability": method_reliability("ddm", data, indicators), "policy": div_policy},
             "dcf_fcfe": {"fair_value": scenario_results["base"]["dcf_fcfe_price"], "reliability": method_reliability("fcfe", data, indicators)},
             "dcf_fcff": {"fair_value": scenario_results["base"]["dcf_fcff_price"], "reliability": method_reliability("fcff", data, indicators)},
             "multiples": multiples,
+            "normalized_ev_ebitda": {"fair_value": normalized_ev_ebitda_value(data, shares), "reliability": "high" if sector == "commodities" else "conditional"},
             "reverse_dcf": {"implied_growth": reverse_growth},
             "residual_income": {"value": residual_income, "fair_value": residual_value, "reliability": method_reliability("residual_income", data, indicators)},
-            "sotp": {"fair_value": sum_sotp(data), "reliability": "conditional"},
-            "nav": {"fair_value": net_asset_value(data, shares), "reliability": "conditional"},
+            "sotp": {"fair_value": sum_sotp(data), "reliability": method_reliability("sotp", data, indicators)},
+            "nav": {"fair_value": net_asset_value(data, shares), "reliability": method_reliability("nav", data, indicators)},
             "sector_weights": sector_method_weights(sector),
         },
         "scenarios": scenario_results,
@@ -723,6 +888,22 @@ def compare_peers(data: dict[str, Any], latest_ind: dict[str, Any]) -> dict[str,
         result["peer_average"][key] = peer_avg
         result["relative_discount"][key] = safe_div((peer_avg or 0) - company_value, peer_avg) if company_value is not None and peer_avg else None
     return result
+
+
+def calculate_projected_ceiling_prices(fair_value: float, growth: float, discount_rate: float, margin_of_safety: float, years: int) -> list[dict[str, Any]]:
+    rows = []
+    for year in range(1, int(years) + 1):
+        future_fair_value = fair_value * ((1 + growth) ** year)
+        present_value = future_fair_value / ((1 + discount_rate) ** year) if discount_rate > -1 else None
+        ceiling_price = present_value * (1 - margin_of_safety) if present_value is not None else None
+        rows.append({
+            "year": year,
+            "future_fair_value": future_fair_value,
+            "present_value": present_value,
+            "margin_of_safety": margin_of_safety,
+            "ceiling_price": ceiling_price,
+        })
+    return rows
 
 
 def calculate_ttm(financials: list[dict[str, Any]], itr_rows: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
@@ -846,6 +1027,10 @@ def build_limitations(data: dict[str, Any], indicators: dict[str, Any]) -> list[
     limitations = list(data.get("limitations", []))
     if not data.get("peers") and not data.get("peer_group"):
         limitations.append("Comparacao com pares depende de dados de pares no input ou coleta setorial.")
+    if sector_key(data.get("company", {})) == "holding" and not holding_methods_available(data):
+        limitations.append("Holding sem SOTP/NAV estruturado; valuation por metodos genericos tem baixa confiabilidade.")
+    if any(row.get("ebitda_estimated") for row in data.get("financials", [])):
+        limitations.append("EBITDA estimado em pelo menos um periodo por ausencia de D&A estruturado na DFC.")
     if not any(source.get("type") == SOURCE_OFFICIAL for source in data.get("sources", [])):
         limitations.append("Dados ainda nao confirmados em fonte oficial dentro deste payload.")
     if indicators.get("data_quality", {}).get("issues"):
@@ -1039,10 +1224,12 @@ def parse_cvm_dfp_zip(zip_path: str | Path, cvm_code: str | int | None = None) -
         debt_short = cvm_find_account(bpp, CVM_ACCOUNT_MAP["gross_debt_short"]) or 0.0
         debt_long = cvm_find_account(bpp, CVM_ACCOUNT_MAP["gross_debt_long"]) or 0.0
         ocf = cvm_find_account(dfc, CVM_ACCOUNT_MAP["operating_cash_flow"]) or 0.0
+        da = abs(cvm_find_account(dfc, CVM_ACCOUNT_MAP["depreciation_amortization"]) or 0.0)
         capex_raw = cvm_find_account(dfc, CVM_ACCOUNT_MAP["capex"]) or 0.0
         capex = abs(capex_raw)
         gross_debt = max(debt_short + debt_long, 0.0)
-        ebitda = max(ebit, net_income, 0.0)
+        ebitda_estimated = da <= 0
+        ebitda = ebit + da if da > 0 else max(ebit, net_income, 0.0)
         free_cash_flow = ocf - capex
         shares = cvm_find_share_count(capital, cnpj, denom, revenue)
         row = {
@@ -1060,7 +1247,8 @@ def parse_cvm_dfp_zip(zip_path: str | Path, cvm_code: str | int | None = None) -
             "shares_outstanding": shares or 1.0,
             "gross_debt": gross_debt,
             "cash": cash,
-            "depreciation_amortization": 0.0,
+            "depreciation_amortization": da,
+            "ebitda_estimated": ebitda_estimated,
             "working_capital_change": 0.0,
             "net_debt_issuance": 0.0,
             "tax_rate": 0.34,
@@ -1114,16 +1302,50 @@ def enrich_financials_with_market_data(financials: list[dict[str, Any]], market_
     shares = company.get("shares_outstanding")
     if not shares or shares <= 1:
         shares = infer_shares_from_market(market_data, financials)
+    dividend_events = normalize_dividend_events(market_data.get("dividend_events") or [])
+    dividends_by_year = aggregate_recurring_dividends_by_year(dividend_events)
     dividend_history = market_data.get("dividend_history") or []
+    fallback_annual_dpa = recent_average_annual_dividend(dividends_by_year)
     for index, row in enumerate(financials):
         row["shares_outstanding"] = shares or row.get("shares_outstanding") or 1.0
-        if dividend_history:
-            dpa = dividend_history[min(index, len(dividend_history) - 1)]
+        if dividends_by_year.get(row.get("year")) is not None:
+            dpa = dividends_by_year[row["year"]]
             row["dividends_paid"] = max(float(dpa), 0.0) * row["shares_outstanding"]
+            row["dividends_source_status"] = SOURCE_AUXILIARY
+        elif fallback_annual_dpa is not None:
+            dpa = fallback_annual_dpa
+            row["dividends_paid"] = max(float(dpa), 0.0) * row["shares_outstanding"]
+            row["dividends_source_status"] = SOURCE_ESTIMATED
+        elif dividend_history:
+            dpa = sum(float(value) for value in dividend_history[-4:])
+            row["dividends_paid"] = max(dpa, 0.0) * row["shares_outstanding"]
+            row["dividends_source_status"] = SOURCE_ESTIMATED
         elif not row.get("dividends_paid"):
             row["dividends_paid"] = max(row.get("net_income", 0) * 0.25, 0.0)
             row["dividends_source_status"] = SOURCE_ESTIMATED
     return financials
+
+
+def aggregate_recurring_dividends_by_year(events: list[dict[str, Any]]) -> dict[int, float]:
+    by_year: dict[int, float] = {}
+    for event in events:
+        if not event.get("is_recurring"):
+            continue
+        year = event.get("year")
+        if year is None and event.get("date"):
+            match = re.match(r"(\d{4})", str(event["date"]))
+            year = int(match.group(1)) if match else None
+        if year is None:
+            continue
+        by_year[int(year)] = by_year.get(int(year), 0.0) + float(event.get("amount_per_share") or 0.0)
+    return by_year
+
+
+def recent_average_annual_dividend(dividends_by_year: dict[int, float], lookback: int = 5) -> float | None:
+    if not dividends_by_year:
+        return None
+    values = [value for _, value in sorted(dividends_by_year.items())[-lookback:] if value > 0]
+    return average(values)
 
 
 def infer_shares_from_market(market_data: dict[str, Any], financials: list[dict[str, Any]]) -> float | None:

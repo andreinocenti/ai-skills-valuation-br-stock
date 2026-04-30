@@ -12,5 +12,7 @@
   "SAPR11": ["SBSP3", "CSMG3"],
   "SBSP3": ["SAPR11", "CSMG3"],
   "ITSA4": ["BRAP4", "BBSE3"],
-  "BRAP4": ["ITSA4", "VALE3"]
+  "BRAP4": ["ITSA4", "VALE3"],
+  "KLBN4": ["SUZB3", "RANI3"],
+  "KLBN11": ["SUZB3", "RANI3"]
 }

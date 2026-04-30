@@ -89,8 +89,15 @@ def infer_required_return(macro_data):
     selic = macro_data.get("selic")
     if selic is None:
         return 0.12
-    # BCB SGS 432 is annual percentage, so convert 10.5 into 0.105 and add equity risk buffer.
-    return max(float(selic) / 100 + 0.03, 0.10)
+    # Keep the default 5-year valuation anchored in a normalized cost of equity.
+    # Spot Selic is reported separately in macro_data and should not mechanically
+    # replace the user's default required return in cyclical rate environments.
+    spot_required_return = float(selic) / 100 + 0.03
+    return clamp_required_return(spot_required_return)
+
+
+def clamp_required_return(spot_required_return):
+    return min(max(0.12, spot_required_return), 0.12)
 
 
 def main():

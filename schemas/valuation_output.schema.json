@@ -10,7 +10,10 @@
     "fair_value_conservative",
     "fair_value_optimistic",
     "suggested_ceiling_price",
+    "base_ceiling_price",
+    "risk_adjusted_ceiling_price",
     "projected_ceiling_price",
+    "projected_ceiling_prices",
     "margin_of_safety",
     "dividend_safe_yield",
     "projected_yield_on_cost_year_5",
@@ -19,6 +22,7 @@
     "risk_level",
     "verdict",
     "confidence",
+    "calculation_metadata",
     "valuation"
   ],
   "properties": {
@@ -29,7 +33,13 @@
     "fair_value_conservative": { "type": "number" },
     "fair_value_optimistic": { "type": "number" },
     "suggested_ceiling_price": { "type": "number" },
+    "base_ceiling_price": { "type": "number" },
+    "risk_adjusted_ceiling_price": { "type": "number" },
     "projected_ceiling_price": { "type": "number" },
+    "projected_ceiling_prices": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
     "margin_of_safety": { "type": "number" },
     "dividend_safe_yield": { "type": "number" },
     "projected_yield_on_cost_year_5": { "type": "number" },
@@ -53,6 +63,10 @@
       "type": "string",
       "enum": ["high", "medium_high", "medium", "medium_low", "low"]
     },
+    "calculation_metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "valuation": {
       "type": "object",
       "required": [
@@ -63,6 +77,7 @@
         "dcf_fcfe",
         "dcf_fcff",
         "multiples",
+        "normalized_ev_ebitda",
         "reverse_dcf",
         "residual_income",
         "sotp",

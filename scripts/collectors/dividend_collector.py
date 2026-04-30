@@ -9,7 +9,7 @@ from valuation_core import normalize_dividend_events, write_json
 
 def collect_dividends(ticker):
     market = collect_market_data(ticker)
-    events = normalize_dividend_events(market.get("dividend_history") or [])
+    events = normalize_dividend_events(market.get("dividend_events") or market.get("dividend_history") or [])
     return {
         "ticker": ticker.upper(),
         "events": events,
