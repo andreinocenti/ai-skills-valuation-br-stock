@@ -87,13 +87,18 @@ def render_dividend_policy(policy):
 def render_methods(valuation):
     methods = valuation["valuation"]
     bazin = methods["bazin"]["ceiling_prices"]
+    bazin_classic = methods["bazin"].get("classic_ceiling_prices", {})
+    ddm_inputs = methods["ddm"].get("inputs", {})
+    fcfe_inputs = methods["dcf_fcfe"].get("inputs", {})
+    fcff_inputs = methods["dcf_fcff"].get("inputs", {})
     rows = [
         f"- Graham: {brl(methods['graham'].get('fair_value'))} | confiabilidade {methods['graham'].get('reliability')}",
-        f"- Bazin 6%: {brl(bazin.get('0.06'))}; 8%: {brl(bazin.get('0.08'))}; 10%: {brl(bazin.get('0.1'))}; 12%: {brl(bazin.get('0.12'))}",
-        f"- Peter Lynch: {methods['peter_lynch'].get('score')}",
-        f"- DDM/Gordon: {brl(methods['ddm'].get('fair_value'))}",
-        f"- DCF FCFE: {brl(methods['dcf_fcfe'].get('fair_value'))}",
-        f"- DCF FCFF: {brl(methods['dcf_fcff'].get('fair_value'))}",
+        f"- Bazin conservador 6%: {brl(bazin.get('0.06'))}; 8%: {brl(bazin.get('0.08'))}; 10%: {brl(bazin.get('0.1'))}; 12%: {brl(bazin.get('0.12'))}",
+        f"- Bazin classico 6%: {brl(bazin_classic.get('0.06'))}; 8%: {brl(bazin_classic.get('0.08'))}; 10%: {brl(bazin_classic.get('0.1'))}; 12%: {brl(bazin_classic.get('0.12'))}",
+        f"- Peter Lynch: {methods['peter_lynch'].get('score')} | peso no valor justo: 0",
+        f"- DDM/Gordon: {brl(methods['ddm'].get('fair_value'))} | D1 {brl(ddm_inputs.get('d1'))}, Ke {pct(ddm_inputs.get('ke'))}, g {pct(ddm_inputs.get('g'))}, Ke-g {pct(ddm_inputs.get('ke_minus_g'))}",
+        f"- DCF FCFE: {brl(methods['dcf_fcfe'].get('fair_value'))} | perpetuidade {pct(fcfe_inputs.get('terminal_value_share'))}",
+        f"- DCF FCFF: {brl(methods['dcf_fcff'].get('fair_value'))} | perpetuidade {pct(fcff_inputs.get('terminal_value_share'))}",
         f"- EV/EBITDA normalizado: {brl(methods.get('normalized_ev_ebitda', {}).get('fair_value'))}",
         f"- Lucro residual: {brl(methods['residual_income'].get('fair_value'))}",
         f"- SOTP: {brl(methods['sotp'].get('fair_value'))}",
@@ -107,9 +112,43 @@ def render_methods(valuation):
 
 def render_sensitivity(sensitivity):
     matrix = sensitivity.get("ddm_matrix", [])
-    rows = [f"- DDM r/g: {json.dumps(matrix)}"]
+    rates = sensitivity.get("rates", [])
+    growths = sensitivity.get("growths", [])
+    rows = ["| Ke \\ g | " + " | ".join(pct(growth) for growth in growths) + " |"]
+    rows.append("|---|" + "|".join("---" for _ in growths) + "|")
+    for rate, values in zip(rates, matrix):
+        rows.append("| " + pct(rate) + " | " + " | ".join(brl(value) for value in values) + " |")
     rows.extend(f"- Bazin yield {key}: {brl(value)}" for key, value in sensitivity.get("bazin_ceiling_prices", {}).items())
     rows.extend(f"- Preco teto com margem {key}: {brl(value)}" for key, value in sensitivity.get("ceiling_by_margin", {}).items())
+    return lines(rows)
+
+
+def render_ceiling_bridge(valuation):
+    ceilings = valuation.get("ceiling_prices", {})
+    recommended = ceilings.get("recommended", {})
+    bazin = ceilings.get("bazin", {})
+    intrinsic = ceilings.get("intrinsic_margin", {})
+    risk_adjusted = ceilings.get("risk_adjusted", {})
+    projected = ceilings.get("projected", {}).get("year_5") or {}
+    risk_policy = valuation.get("calculation_metadata", {}).get("risk_adjustments", {})
+    adjustments = risk_policy.get("adjustments", [])
+    rows = [
+        f"- Valor justo ponderado base: {brl(valuation.get('fair_value_base'))}",
+        f"- Teto por margem base: {brl(intrinsic.get('ceiling_price'))} ({pct(intrinsic.get('required_margin'))})",
+        f"- Teto ajustado ao risco: {brl(risk_adjusted.get('ceiling_price'))} ({pct(risk_adjusted.get('required_margin'))})",
+        f"- Margem base: {pct(risk_policy.get('base_margin'))}",
+        f"- Margem final ajustada ao risco: {pct(risk_policy.get('final_margin'))}",
+        f"- Bazin classico selecionado: {brl(bazin.get('selected_classic_price'))}",
+        f"- Bazin conservador selecionado: {brl(bazin.get('selected_price'))} no yield {pct(bazin.get('selected_yield'))}",
+        f"- Teto projetivo ano 5: {brl(projected.get('ceiling_price'))}",
+        f"- Preco teto recomendado: {brl(recommended.get('price'))}",
+        f"- Metodo recomendado: {recommended.get('method')}",
+        f"- Motivo: {recommended.get('reason')}",
+    ]
+    rows.extend(
+        f"- Ajuste de risco: {item.get('name')} +{pct(item.get('impact'))} ({item.get('reason')})"
+        for item in adjustments
+    )
     return lines(rows)
 
 
@@ -155,7 +194,7 @@ def generate_markdown(valuation, sensitivity):
     return f"""# Valuation de {valuation['ticker']} - {valuation['company_name']}
 
 ## 1. Resumo executivo
-{valuation['ticker']} negocia a {brl(valuation['current_price'])}. O valor justo base estimado e {brl(valuation['fair_value_base'])}, com preco teto base de {brl(valuation['suggested_ceiling_price'])}, preco teto ajustado ao risco de {brl(valuation.get('risk_adjusted_ceiling_price'))} e preco teto projetivo de {brl(valuation['projected_ceiling_price'])}. Veredito: {valuation['verdict']}. Confianca: {valuation['confidence']}.
+{valuation['ticker']} negocia a {brl(valuation['current_price'])}. O valor justo base estimado e {brl(valuation['fair_value_base'])}, com preco teto recomendado de {brl(valuation['suggested_ceiling_price'])}, preco teto ajustado ao risco de {brl(valuation.get('risk_adjusted_ceiling_price'))} e preco teto projetivo de {brl(valuation['projected_ceiling_price'])}. Veredito: {valuation['verdict']}. Confianca: {valuation['confidence']}.
 
 ## 2. Dados da empresa
 - Nome: {valuation['company_name']}
@@ -172,9 +211,12 @@ def generate_markdown(valuation, sensitivity):
 - Margem base informada: {pct(valuation.get('base_margin_of_safety'))}
 - Margem exigida ajustada ao risco: {pct(valuation['required_margin_of_safety'])}
 - Risco: {valuation['risk_level']}
+- Versao da skill: {valuation.get('skill_version', valuation.get('calculation_metadata', {}).get('skill_version', 'valuation-br-stock'))}
 - Versao do motor: {valuation.get('calculation_metadata', {}).get('engine_version', 'nao informada')}
 - Setor classificado: {valuation.get('calculation_metadata', {}).get('sector_key', 'nao informado')}
 - Pesos setoriais: {json.dumps(valuation.get('calculation_metadata', {}).get('sector_weights', {}), ensure_ascii=True, sort_keys=True)}
+- Ke usado: {pct(valuation.get('calculation_metadata', {}).get('discount_rate_policy', {}).get('ke_used'))}
+- Ke spot: {pct(valuation.get('calculation_metadata', {}).get('discount_rate_policy', {}).get('ke_spot'))}
 
 ## 5. Diagnostico fundamentalista
 - P/L: {latest.get('p_l')}
@@ -220,9 +262,13 @@ def generate_markdown(valuation, sensitivity):
 {render_sensitivity(sensitivity)}
 
 ## 12. Preco teto
-- Preco teto base por margem informada: {brl(valuation['suggested_ceiling_price'])}
+- Preco teto recomendado: {brl(valuation['suggested_ceiling_price'])}
+- Preco teto base por margem informada: {brl(valuation.get('base_ceiling_price'))}
 - Preco teto ajustado ao risco: {brl(valuation.get('risk_adjusted_ceiling_price'))}
 - Precos teto Bazin: {json.dumps(valuation['valuation']['bazin']['ceiling_prices'], ensure_ascii=True)}
+
+### Como chegamos ao preco teto recomendado
+{render_ceiling_bridge(valuation)}
 
 ## 13. Preco teto projetivo
 - Preco teto projetivo: {brl(valuation['projected_ceiling_price'])}

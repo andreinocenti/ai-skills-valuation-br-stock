@@ -20,7 +20,8 @@ SOURCE_AUXILIARY = "auxiliar"
 SOURCE_ESTIMATED = "estimado"
 SOURCE_INFERRED = "inferido"
 SOURCE_NOT_FOUND = "nao_encontrado"
-CALCULATION_ENGINE_VERSION = "valuation-br-stock-2026-04-30-sector-v2"
+SKILL_VERSION = "valuation-br-stock"
+CALCULATION_ENGINE_VERSION = "valuation-br-stock-2026-04-30-ceiling-v3"
 
 VERDICTS = [
     "Evitar",
@@ -436,23 +437,46 @@ def sector_key(company: dict[str, Any]) -> str:
 
 
 def dynamic_margin_of_safety(data: dict[str, Any], indicators: dict[str, Any]) -> float:
+    return risk_adjustments(data, indicators)["final_margin"]
+
+
+def risk_adjustments(data: dict[str, Any], indicators: dict[str, Any]) -> dict[str, Any]:
     requested = data.get("margin_of_safety", 0.20)
     sector = sector_key(data.get("company", {}))
+    adjustments = []
     base = requested
     if sector in ("commodities", "retail"):
-        base = max(base, 0.30)
+        sector_floor = 0.30
+        if base < sector_floor:
+            adjustments.append({"name": "piso_setorial_ciclico", "impact": sector_floor - base, "reason": "setor ciclico exige margem minima maior"})
+            base = sector_floor
     if sector == "holding":
-        base = max(base, 0.25)
+        sector_floor = 0.25
+        if base < sector_floor:
+            adjustments.append({"name": "piso_holding", "impact": sector_floor - base, "reason": "holding exige desconto por estrutura e NAV"})
+            base = sector_floor
     if sector == "utilities":
-        base = max(base, 0.15)
+        sector_floor = 0.15
+        if base < sector_floor:
+            adjustments.append({"name": "piso_utilities", "impact": sector_floor - base, "reason": "receita regulada permite margem minima menor"})
+            base = sector_floor
     latest_ind = indicators.get("latest", {})
     if (latest_ind.get("net_debt_ebitda") or 0) > 3:
+        adjustments.append({"name": "alavancagem_elevada", "impact": 0.07, "reason": "divida liquida/EBITDA acima de 3x"})
         base += 0.07
     if (latest_ind.get("payout_adjusted") or 0) > 1:
+        adjustments.append({"name": "payout_acima_de_100", "impact": 0.05, "reason": "dividendos acima do lucro ajustado"})
         base += 0.05
     if "caixa_operacional_abaixo_do_lucro" in indicators.get("data_quality", {}).get("issues", []):
+        adjustments.append({"name": "qualidade_do_lucro", "impact": 0.07, "reason": "caixa operacional abaixo do lucro"})
         base += 0.07
-    return clamp(base, 0.10, 0.50)
+    final_margin = clamp(base, 0.10, 0.50)
+    return {
+        "base_margin": requested,
+        "adjustments": adjustments,
+        "final_margin": final_margin,
+        "capped": final_margin != base,
+    }
 
 
 def normalize_cyclical_financials(financials: list[dict[str, Any]], sector: str) -> list[dict[str, Any]]:
@@ -474,7 +498,9 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
     financials = order_years(data["financials"])
     years = data.get("investment_horizon_years", 5)
     required_return = data.get("required_return", 0.12)
-    normalized_rows = normalize_cyclical_financials(financials, sector_key(data.get("company", {})))
+    sector = sector_key(data.get("company", {}))
+    terminal_policy = terminal_growth_policy(data, sector)
+    normalized_rows = normalize_cyclical_financials(financials, sector)
     revenue_growth = cagr(normalized_rows[0].get("revenue"), normalized_rows[-1].get("revenue"), len(normalized_rows) - 1)
     income_growth = cagr(
         normalized_rows[0].get("net_income_adjusted", normalized_rows[0].get("net_income")),
@@ -495,7 +521,7 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "ebit_margin": clamp(operating["ebit_margin"] - 0.015, 0.0, 0.60),
             "payout": clamp(payout - 0.08, 0.0, 0.85),
             "discount_rate": required_return + 0.015,
-            "terminal_growth": 0.025,
+            "terminal_growth": max(terminal_policy["terminal_growth_base"] - 0.01, 0.015),
             "years": years,
         },
         "base": {
@@ -506,7 +532,7 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "ebit_margin": clamp(operating["ebit_margin"], 0.0, 0.60),
             "payout": clamp(payout, 0.0, 0.90),
             "discount_rate": required_return,
-            "terminal_growth": 0.035,
+            "terminal_growth": terminal_policy["terminal_growth_base"],
             "years": years,
         },
         "optimistic": {
@@ -517,7 +543,7 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "ebit_margin": clamp(operating["ebit_margin"] + 0.015, 0.0, 0.60),
             "payout": clamp(payout + 0.04, 0.0, 0.95),
             "discount_rate": max(required_return - 0.01, 0.08),
-            "terminal_growth": 0.045,
+            "terminal_growth": min(terminal_policy["terminal_growth_base"] + 0.01, 0.05),
             "years": years,
         },
     }
@@ -589,11 +615,26 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
 
 
 def discount_cash_flows(cash_flows: list[float], rate: float, terminal_growth: float) -> float | None:
+    details = discount_cash_flow_details(cash_flows, rate, terminal_growth)
+    return details.get("enterprise_value") if details else None
+
+
+def discount_cash_flow_details(cash_flows: list[float], rate: float, terminal_growth: float) -> dict[str, Any] | None:
     if not cash_flows or rate <= terminal_growth:
         return None
-    pv = sum(value / ((1 + rate) ** index) for index, value in enumerate(cash_flows, start=1))
+    discounted_flows = [value / ((1 + rate) ** index) for index, value in enumerate(cash_flows, start=1)]
+    pv = sum(discounted_flows)
     terminal = cash_flows[-1] * (1 + terminal_growth) / (rate - terminal_growth)
-    return pv + terminal / ((1 + rate) ** len(cash_flows))
+    discounted_terminal = terminal / ((1 + rate) ** len(cash_flows))
+    value = pv + discounted_terminal
+    return {
+        "explicit_pv": pv,
+        "terminal_value": terminal,
+        "discounted_terminal_value": discounted_terminal,
+        "enterprise_value": value,
+        "terminal_value_share": safe_div(discounted_terminal, value) or 0.0,
+        "discounted_flows": discounted_flows,
+    }
 
 
 def method_reliability(method: str, data: dict[str, Any], indicators: dict[str, Any]) -> str:
@@ -656,6 +697,17 @@ def income_method_weight_value(value: float | None, policy: dict[str, Any], sect
     return value
 
 
+def method_record(fair_value: float | None, applicable: bool, reliability: str, weight: float, reason: str, inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "fair_value": fair_value,
+        "applicable": applicable,
+        "reliability": reliability,
+        "weight": weight if applicable and fair_value is not None else 0.0,
+        "reason": reason,
+        "inputs": inputs or {},
+    }
+
+
 def multiple_implied_value(data: dict[str, Any], latest_ind: dict[str, Any]) -> float | None:
     peers = data.get("peers") or []
     if not peers:
@@ -688,6 +740,64 @@ def normalized_ev_ebitda_value(data: dict[str, Any], shares: float) -> float | N
     return safe_div(equity_value, shares)
 
 
+def discount_rate_policy(data: dict[str, Any], sector: str, indicators: dict[str, Any]) -> dict[str, Any]:
+    macro = data.get("macro_data", {}) or {}
+    selic = macro.get("selic")
+    risk_free_spot = float(selic) / 100 if selic is not None else None
+    normalized_risk_free = 0.10
+    market_premium = 0.04
+    sector_premiums = {
+        "banks": 0.01,
+        "insurance": 0.005,
+        "utilities": 0.005,
+        "commodities": 0.02,
+        "retail": 0.02,
+        "holding": 0.015,
+        "general": 0.01,
+    }
+    sector_premium = sector_premiums.get(sector, 0.01)
+    latest_ind = indicators.get("latest", {})
+    specific_premium = 0.0
+    if (latest_ind.get("net_debt_ebitda") or 0) > 3:
+        specific_premium += 0.01
+    if indicators.get("data_quality", {}).get("confidence") in ("low", "medium_low"):
+        specific_premium += 0.01
+    ke_normalized = clamp(normalized_risk_free + market_premium + sector_premium + specific_premium, 0.10, 0.24)
+    ke_spot = clamp((risk_free_spot if risk_free_spot is not None else normalized_risk_free) + market_premium + sector_premium + specific_premium, 0.10, 0.24)
+    ke_used = data.get("required_return")
+    if ke_used is None:
+        ke_used = ke_normalized
+    return {
+        "risk_free_rate_spot": risk_free_spot,
+        "normalized_risk_free_rate": normalized_risk_free,
+        "market_risk_premium": market_premium,
+        "sector_risk_premium": sector_premium,
+        "company_specific_premium": specific_premium,
+        "ke_spot": ke_spot,
+        "ke_normalized": ke_normalized,
+        "ke_used": clamp(float(ke_used), 0.10, 0.24),
+        "policy": "user_or_pipeline_required_return_with_normalized_and_spot_disclosure",
+    }
+
+
+def terminal_growth_policy(data: dict[str, Any], sector: str) -> dict[str, Any]:
+    macro = data.get("macro_data", {}) or {}
+    ipca_12m = macro.get("ipca_12m_estimated")
+    normalized_inflation = 0.04
+    real_growth = 0.005 if sector in ("commodities", "retail") else 0.01
+    if sector in ("banks", "insurance"):
+        real_growth = 0.005
+    g_base = min(normalized_inflation + real_growth, 0.045)
+    return {
+        "ipca_monthly_latest": macro.get("ipca_monthly_latest", macro.get("ipca")),
+        "ipca_12m_estimated": ipca_12m,
+        "normalized_inflation": normalized_inflation,
+        "real_growth": real_growth,
+        "terminal_growth_base": g_base,
+        "reason": "usa inflacao normalizada e crescimento real conservador; IPCA mensal nao e usado diretamente",
+    }
+
+
 def holding_methods_available(data: dict[str, Any]) -> bool:
     return bool(data.get("sotp_parts") or data.get("asset_values"))
 
@@ -700,28 +810,38 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     latest_ind = indicators["latest"]
     current_price = data.get("market_data", {}).get("current_price", 0)
     shares = last.get("shares_outstanding", 1)
-    required_return = data.get("required_return", 0.12)
     sector = sector_key(data.get("company", {}))
+    discount_policy = discount_rate_policy(data, sector, indicators)
+    data["required_return"] = discount_policy["ke_used"]
+    required_return = discount_policy["ke_used"]
     scenarios = build_scenarios(data, indicators)
-    dynamic_mos = dynamic_margin_of_safety(data, indicators)
+    risk_policy = risk_adjustments(data, indicators)
+    dynamic_mos = risk_policy["final_margin"]
     requested_mos = data.get("margin_of_safety", 0.20)
     div_policy = indicators.get("dividends", {}).get("policy", {})
     safe_dividend = div_policy.get("safe_dividend_per_share", 0.0)
     graham = None
     if (latest_ind.get("lpa") or 0) > 0 and (latest_ind.get("vpa") or 0) > 0:
         graham = math.sqrt(22.5 * latest_ind["lpa"] * latest_ind["vpa"])
-    bazin = {str(yield_rate): safe_dividend / yield_rate for yield_rate in data.get("desired_dividend_yields", [0.06, 0.08, 0.10, 0.12]) if yield_rate > 0}
+    desired_yields = data.get("desired_dividend_yields", [0.06, 0.08, 0.10, 0.12])
+    bazin_ceiling = build_bazin_ceiling(div_policy, desired_yields, data.get("macro_data", {}))
+    bazin = bazin_ceiling["conservative"]
     growth = scenarios["base"]["net_income_growth"]
     p_l = latest_ind.get("p_l")
     dividend_yield = safe_div(safe_dividend, current_price) if current_price else 0
     lynch = (((growth * 100) + ((dividend_yield or 0) * 100)) / p_l) if p_l and p_l > 0 else None
-    ddm = safe_dividend * (1 + growth) / (required_return - scenarios["base"]["terminal_growth"]) if required_return > scenarios["base"]["terminal_growth"] else None
+    ddm_expected_dividend = safe_dividend * (1 + growth)
+    ddm = ddm_value(ddm_expected_dividend, required_return, scenarios["base"]["terminal_growth"])
+    ddm_applicable = ddm is not None and div_policy.get("suitable_for_bazin_ddm_weight", False)
     scenario_results = {}
     fair_values = {}
+    scenario_method_maps = {}
     for name, scenario in scenarios.items():
         projections = project_years(last, scenario)
-        fcfe_value = discount_cash_flows([row["fcfe"] for row in projections], scenario["discount_rate"], scenario["terminal_growth"])
-        fcff_value = discount_cash_flows([row["fcff"] for row in projections], scenario["discount_rate"], scenario["terminal_growth"])
+        fcfe_details = discount_cash_flow_details([row["fcfe"] for row in projections], scenario["discount_rate"], scenario["terminal_growth"])
+        fcff_details = discount_cash_flow_details([row["fcff"] for row in projections], scenario["discount_rate"], scenario["terminal_growth"])
+        fcfe_value = fcfe_details["enterprise_value"] if fcfe_details else None
+        fcff_value = fcff_details["enterprise_value"] if fcff_details else None
         fcfe_price = safe_div(fcfe_value, shares)
         fcff_price = safe_div((fcff_value or 0) - last.get("net_debt", 0), shares) if fcff_value is not None else None
         residual_price = residual_income_value(last, required_return, scenario["net_income_growth"], shares)
@@ -747,25 +867,40 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             method_values = [value for key, value in method_map.items() if key not in ("sotp", "nav")]
         fair = weighted_fair_value(method_map, sector_method_weights(sector)) or average(method_values) or 0.0
         fair_values[name] = fair
+        scenario_method_maps[name] = method_map
         scenario_results[name] = {
             "assumptions": scenario,
             "projections": projections,
             "dcf_fcfe_price": fcfe_price,
             "dcf_fcff_price": fcff_price,
+            "dcf_fcfe_details": fcfe_details,
+            "dcf_fcff_details": fcff_details,
             "residual_income_price": residual_price,
             "fair_value": fair,
         }
     fair_base = fair_values["base"]
-    base_ceiling = fair_base * (1 - requested_mos)
-    risk_adjusted_ceiling = fair_base * (1 - dynamic_mos)
     projected_ceiling_prices = calculate_projected_ceiling_prices(
-        scenario_results["base"]["fair_value"],
-        growth,
-        required_return,
+        scenario_results["conservative"]["fair_value"],
+        scenarios["conservative"]["net_income_growth"],
+        scenarios["conservative"]["discount_rate"],
         requested_mos,
         data.get("investment_horizon_years", 5),
     )
-    projected_ceiling = projected_ceiling_prices[-1]["ceiling_price"] if projected_ceiling_prices else None
+    ceiling_prices = build_ceiling_prices(
+        data,
+        sector,
+        data.get("analysis_focus", "full"),
+        fair_base,
+        requested_mos,
+        dynamic_mos,
+        bazin_ceiling,
+        projected_ceiling_prices,
+        scenario_method_maps["base"],
+    )
+    recommended_ceiling = ceiling_prices["recommended"]["price"]
+    base_ceiling = ceiling_prices["intrinsic_margin"]["ceiling_price"]
+    risk_adjusted_ceiling = ceiling_prices["risk_adjusted"]["ceiling_price"]
+    projected_ceiling = ceiling_prices["projected"]["year_5"]["ceiling_price"] if ceiling_prices["projected"]["year_5"] else None
     residual_income = last.get("net_income_adjusted", last.get("net_income", 0)) - required_return * last.get("equity", 0)
     residual_value = scenario_results["base"]["residual_income_price"]
     multiples = compare_peers(data, latest_ind)
@@ -776,16 +911,18 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     verdict = classify_verdict(current_price, fair_base, opportunity_score, risk_level)
     output = {
         "ticker": data.get("ticker"),
+        "skill_version": SKILL_VERSION,
         "company_name": data.get("company", {}).get("name", data.get("ticker")),
         "current_price": current_price,
         "fair_value_base": fair_base,
         "fair_value_conservative": fair_values["conservative"],
         "fair_value_optimistic": fair_values["optimistic"],
-        "suggested_ceiling_price": base_ceiling,
+        "suggested_ceiling_price": recommended_ceiling,
         "base_ceiling_price": base_ceiling,
         "risk_adjusted_ceiling_price": risk_adjusted_ceiling,
         "projected_ceiling_price": projected_ceiling,
         "projected_ceiling_prices": projected_ceiling_prices,
+        "ceiling_prices": ceiling_prices,
         "margin_of_safety": safe_div(fair_base - current_price, fair_base) or 0.0,
         "required_margin_of_safety": dynamic_mos,
         "base_margin_of_safety": requested_mos,
@@ -797,10 +934,14 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         "verdict": verdict,
         "confidence": indicators["data_quality"]["confidence"],
         "calculation_metadata": {
+            "skill_version": SKILL_VERSION,
             "engine_version": CALCULATION_ENGINE_VERSION,
             "sector_key": sector,
             "sector_weights": sector_method_weights(sector),
             "required_return": required_return,
+            "discount_rate_policy": discount_policy,
+            "terminal_growth_policy": terminal_growth_policy(data, sector),
+            "risk_adjustments": risk_policy,
             "base_margin_of_safety": requested_mos,
             "risk_adjusted_margin_of_safety": dynamic_mos,
         },
@@ -818,18 +959,18 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "sector": sector,
         },
         "valuation": {
-            "graham": {"fair_value": graham, "reliability": method_reliability("graham", data, indicators)},
-            "bazin": {"safe_dividend_per_share": safe_dividend, "ceiling_prices": bazin, "reliability": method_reliability("bazin", data, indicators), "policy": div_policy},
-            "peter_lynch": {"score": lynch, "reliability": method_reliability("lynch", data, indicators)},
-            "ddm": {"fair_value": ddm, "required_return": required_return, "growth": growth, "reliability": method_reliability("ddm", data, indicators), "policy": div_policy},
-            "dcf_fcfe": {"fair_value": scenario_results["base"]["dcf_fcfe_price"], "reliability": method_reliability("fcfe", data, indicators)},
-            "dcf_fcff": {"fair_value": scenario_results["base"]["dcf_fcff_price"], "reliability": method_reliability("fcff", data, indicators)},
+            "graham": method_record(graham, graham is not None, method_reliability("graham", data, indicators), sector_method_weights(sector).get("graham", 0), "Graham aplicavel apenas com LPA e VPA positivos", {"lpa": latest_ind.get("lpa"), "vpa": latest_ind.get("vpa")}),
+            "bazin": {**method_record(bazin_value_for_fair_value(bazin), income_method_weight_value(bazin_value_for_fair_value(bazin), div_policy, sector) is not None, method_reliability("bazin", data, indicators), sector_method_weights(sector).get("bazin", 0), "Bazin entra no peso apenas se dividendos forem adequados ao setor", {"selected_yield": bazin_ceiling.get("selected_yield")}), "safe_dividend_per_share": safe_dividend, "ceiling_prices": bazin, "classic_ceiling_prices": bazin_ceiling["classic"], "policy": div_policy},
+            "peter_lynch": {"score": lynch, "applicable": p_l is not None and p_l > 0, "reliability": method_reliability("lynch", data, indicators), "weight": 0.0, "reason": "Peter Lynch e score relativo; influencia oportunidade, nao preco justo"},
+            "ddm": {**method_record(ddm, ddm_applicable, method_reliability("ddm", data, indicators), sector_method_weights(sector).get("ddm", 0), "DDM exige Ke > g e dividendos previsiveis", {"d1": ddm_expected_dividend, "ke": required_return, "g": scenarios["base"]["terminal_growth"], "ke_minus_g": required_return - scenarios["base"]["terminal_growth"]}), "required_return": required_return, "growth": growth, "policy": div_policy},
+            "dcf_fcfe": {**method_record(scenario_results["base"]["dcf_fcfe_price"], scenario_results["base"]["dcf_fcfe_price"] is not None, method_reliability("fcfe", data, indicators), sector_method_weights(sector).get("dcf_fcfe", 0), "DCF FCFE baseado em fluxos projetados ao acionista", {"discount_rate": scenarios["base"]["discount_rate"], "terminal_growth": scenarios["base"]["terminal_growth"], "terminal_value_share": (scenario_results["base"]["dcf_fcfe_details"] or {}).get("terminal_value_share")}), "details": scenario_results["base"]["dcf_fcfe_details"]},
+            "dcf_fcff": {**method_record(scenario_results["base"]["dcf_fcff_price"], scenario_results["base"]["dcf_fcff_price"] is not None, method_reliability("fcff", data, indicators), sector_method_weights(sector).get("dcf_fcff", 0), "DCF FCFF baseado em fluxo da firma menos divida liquida", {"discount_rate": scenarios["base"]["discount_rate"], "terminal_growth": scenarios["base"]["terminal_growth"], "terminal_value_share": (scenario_results["base"]["dcf_fcff_details"] or {}).get("terminal_value_share")}), "details": scenario_results["base"]["dcf_fcff_details"]},
             "multiples": multiples,
-            "normalized_ev_ebitda": {"fair_value": normalized_ev_ebitda_value(data, shares), "reliability": "high" if sector == "commodities" else "conditional"},
+            "normalized_ev_ebitda": method_record(normalized_ev_ebitda_value(data, shares), normalized_ev_ebitda_value(data, shares) is not None and sector == "commodities", "high" if sector == "commodities" else "conditional", sector_method_weights(sector).get("normalized_ev_ebitda", 0), "EV/EBITDA normalizado e metodo principal para commodities", {}),
             "reverse_dcf": {"implied_growth": reverse_growth},
-            "residual_income": {"value": residual_income, "fair_value": residual_value, "reliability": method_reliability("residual_income", data, indicators)},
-            "sotp": {"fair_value": sum_sotp(data), "reliability": method_reliability("sotp", data, indicators)},
-            "nav": {"fair_value": net_asset_value(data, shares), "reliability": method_reliability("nav", data, indicators)},
+            "residual_income": {**method_record(residual_value, residual_value is not None, method_reliability("residual_income", data, indicators), sector_method_weights(sector).get("residual_income", 0), "Lucro residual e central para bancos/seguradoras", {"residual_income": residual_income}), "value": residual_income},
+            "sotp": method_record(sum_sotp(data), sum_sotp(data) is not None, method_reliability("sotp", data, indicators), sector_method_weights(sector).get("sotp", 0), "SOTP e principal para holdings quando partes sao informadas"),
+            "nav": method_record(net_asset_value(data, shares), net_asset_value(data, shares) is not None, method_reliability("nav", data, indicators), sector_method_weights(sector).get("nav", 0), "NAV e principal para holdings quando ativos sao informados"),
             "sector_weights": sector_method_weights(sector),
         },
         "scenarios": scenario_results,
@@ -906,6 +1047,119 @@ def calculate_projected_ceiling_prices(fair_value: float, growth: float, discoun
     return rows
 
 
+def select_bazin_yield(macro_data: dict[str, Any], desired_yields: list[float]) -> tuple[float, str]:
+    available = sorted(float(value) for value in desired_yields if value)
+    if not available:
+        return 0.08, "yield padrao por ausencia de lista"
+    selic = macro_data.get("selic")
+    if selic is None:
+        preferred = 0.08
+        reason = "Selic indisponivel; usa referencia moderada de 8%"
+    else:
+        selic_decimal = float(selic) / 100
+        if selic_decimal <= 0.08:
+            preferred = 0.08 if 0.08 in available else 0.06
+            reason = "Selic <= 8%; yield historico/moderado"
+        elif selic_decimal <= 0.12:
+            preferred = 0.10 if 0.10 in available else 0.08
+            reason = "Selic entre 8% e 12%; yield moderado/conservador"
+        else:
+            preferred = 0.12 if 0.12 in available else 0.10
+            reason = "Selic > 12%; yield conservador"
+    selected = min(available, key=lambda value: abs(value - preferred))
+    return selected, reason
+
+
+def build_bazin_ceiling(policy: dict[str, Any], desired_yields: list[float], macro_data: dict[str, Any]) -> dict[str, Any]:
+    classic_dpa = policy.get("annual_dpa_median") or policy.get("annual_dpa_mean") or 0.0
+    conservative_dpa = policy.get("safe_dividend_per_share") or 0.0
+    classic = {str(yield_rate): classic_dpa / yield_rate for yield_rate in desired_yields if yield_rate > 0}
+    conservative = {str(yield_rate): conservative_dpa / yield_rate for yield_rate in desired_yields if yield_rate > 0}
+    selected_yield, reason = select_bazin_yield(macro_data, desired_yields)
+    selected_key = str(selected_yield)
+    classic_price = classic.get(selected_key)
+    conservative_price = conservative.get(selected_key)
+    haircut = safe_div(classic_dpa - conservative_dpa, classic_dpa) if classic_dpa else None
+    return {
+        "classic": classic,
+        "conservative": conservative,
+        "classic_dpa": classic_dpa,
+        "conservative_dpa": conservative_dpa,
+        "selected_yield": selected_yield,
+        "selected_price": conservative_price,
+        "selected_classic_price": classic_price,
+        "haircut": haircut,
+        "selection_reason": reason,
+        "conservatism_reason": policy.get("method_action"),
+    }
+
+
+def build_ceiling_prices(
+    data: dict[str, Any],
+    sector: str,
+    focus: str,
+    fair_value: float,
+    base_margin: float,
+    risk_margin: float,
+    bazin_ceiling: dict[str, Any],
+    projected_rows: list[dict[str, Any]],
+    method_map: dict[str, float | None],
+) -> dict[str, Any]:
+    intrinsic = {
+        "fair_value_base": fair_value,
+        "required_margin": base_margin,
+        "ceiling_price": fair_value * (1 - base_margin),
+    }
+    risk_adjusted = {
+        "fair_value_base": fair_value,
+        "required_margin": risk_margin,
+        "ceiling_price": fair_value * (1 - risk_margin),
+    }
+    projected = {
+        "years": projected_rows,
+        "year_5": projected_rows[-1] if projected_rows else None,
+    }
+    candidates = []
+    def add_candidate(method: str, price: float | None, reason: str):
+        if price is not None:
+            candidates.append({"method": method, "price": price, "reason": reason})
+
+    projected_price = projected["year_5"]["ceiling_price"] if projected["year_5"] else None
+    if focus == "dividends":
+        add_candidate("bazin_conservative", bazin_ceiling.get("selected_price"), "foco em dividendos usa Bazin conservador no yield selecionado")
+        add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem de seguranca")
+        add_candidate("projected", projected_price, "teto projetivo descontado")
+    elif sector == "banks":
+        add_candidate("residual_income", method_map.get("residual_income"), "banco prioriza lucro residual")
+        add_candidate("p_vp", method_map.get("p_vp"), "banco prioriza P/VP ajustado por ROE")
+        add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem")
+    elif sector == "commodities":
+        add_candidate("normalized_ev_ebitda", method_map.get("normalized_ev_ebitda"), "commodity prioriza EV/EBITDA normalizado")
+        add_candidate("dcf_fcff", method_map.get("dcf_fcff"), "commodity prioriza DCF conservador de ciclo")
+        add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "setor ciclico usa margem ajustada ao risco")
+    elif sector == "holding":
+        add_candidate("sotp", method_map.get("sotp"), "holding prioriza soma das partes")
+        add_candidate("nav", method_map.get("nav"), "holding prioriza NAV")
+        add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "fallback por margem de seguranca")
+    else:
+        add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem")
+        add_candidate("projected", projected_price, "teto projetivo descontado")
+
+    recommended = min(candidates, key=lambda item: item["price"]) if candidates else {
+        "method": "not_available",
+        "price": None,
+        "reason": "nenhum teto aplicavel calculado",
+    }
+    return {
+        "bazin": bazin_ceiling,
+        "intrinsic_margin": intrinsic,
+        "risk_adjusted": risk_adjusted,
+        "projected": projected,
+        "recommended": recommended,
+        "candidates": candidates,
+    }
+
+
 def calculate_ttm(financials: list[dict[str, Any]], itr_rows: list[dict[str, Any]] | None = None) -> dict[str, Any] | None:
     if not financials:
         return None
@@ -926,6 +1180,12 @@ def reverse_dcf_growth(price: float, dividend: float, required_return: float) ->
     if not price or price <= 0:
         return None
     return clamp(required_return - safe_div(dividend, price), -0.10, required_return - 0.005)
+
+
+def ddm_value(dividend_expected: float, required_return: float, growth: float) -> float | None:
+    if required_return <= growth:
+        return None
+    return dividend_expected / (required_return - growth)
 
 
 def score_quality(indicators: dict[str, Any], sector: str) -> int:

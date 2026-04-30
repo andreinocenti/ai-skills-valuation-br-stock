@@ -27,6 +27,7 @@ REQUIRED_HEADINGS = [
 
 REQUIRED_JSON_KEYS = [
     "ticker",
+    "skill_version",
     "company_name",
     "current_price",
     "fair_value_base",
@@ -37,6 +38,7 @@ REQUIRED_JSON_KEYS = [
     "risk_adjusted_ceiling_price",
     "projected_ceiling_price",
     "projected_ceiling_prices",
+    "ceiling_prices",
     "margin_of_safety",
     "dividend_safe_yield",
     "projected_yield_on_cost_year_5",
@@ -81,8 +83,20 @@ def main():
     payload = report.get("json", {})
     missing = [heading for heading in REQUIRED_HEADINGS if heading not in markdown]
     missing += [key for key in REQUIRED_JSON_KEYS if key not in payload]
+    if "Versao da skill:" not in markdown:
+        missing.append("markdown.skill_version")
+    if "Versao do motor:" not in markdown:
+        missing.append("markdown.engine_version")
+    if not payload.get("calculation_metadata", {}).get("engine_version"):
+        missing.append("calculation_metadata.engine_version")
     valuation = payload.get("valuation", {})
     missing += [f"valuation.{method}" for method in REQUIRED_METHODS if method not in valuation]
+    ceiling_prices = payload.get("ceiling_prices", {})
+    for key in ("bazin", "intrinsic_margin", "risk_adjusted", "projected", "recommended", "candidates"):
+        if key not in ceiling_prices:
+            missing.append(f"ceiling_prices.{key}")
+    if ceiling_prices.get("recommended", {}).get("price") != payload.get("suggested_ceiling_price"):
+        missing.append("ceiling_prices.recommended.price_matches_suggested")
     if not payload.get("risks"):
         missing.append("risks")
     if not payload.get("limitations"):

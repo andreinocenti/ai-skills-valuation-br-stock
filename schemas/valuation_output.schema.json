@@ -4,6 +4,7 @@
   "type": "object",
   "required": [
     "ticker",
+    "skill_version",
     "company_name",
     "current_price",
     "fair_value_base",
@@ -14,6 +15,7 @@
     "risk_adjusted_ceiling_price",
     "projected_ceiling_price",
     "projected_ceiling_prices",
+    "ceiling_prices",
     "margin_of_safety",
     "dividend_safe_yield",
     "projected_yield_on_cost_year_5",
@@ -27,6 +29,7 @@
   ],
   "properties": {
     "ticker": { "type": "string" },
+    "skill_version": { "type": "string" },
     "company_name": { "type": "string" },
     "current_price": { "type": "number" },
     "fair_value_base": { "type": "number" },
@@ -39,6 +42,33 @@
     "projected_ceiling_prices": {
       "type": "array",
       "items": { "type": "object", "additionalProperties": true }
+    },
+    "ceiling_prices": {
+      "type": "object",
+      "required": [
+        "bazin",
+        "intrinsic_margin",
+        "risk_adjusted",
+        "projected",
+        "recommended",
+        "candidates"
+      ],
+      "properties": {
+        "bazin": { "type": "object", "additionalProperties": true },
+        "intrinsic_margin": { "type": "object", "additionalProperties": true },
+        "risk_adjusted": { "type": "object", "additionalProperties": true },
+        "projected": { "type": "object", "additionalProperties": true },
+        "recommended": {
+          "type": "object",
+          "required": ["method", "price", "reason"],
+          "additionalProperties": true
+        },
+        "candidates": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "additionalProperties": true
     },
     "margin_of_safety": { "type": "number" },
     "dividend_safe_yield": { "type": "number" },
