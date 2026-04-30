@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Peer group",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["ticker"],
+    "properties": {
+      "ticker": { "type": "string" },
+      "p_l": { "type": "number" },
+      "p_vp": { "type": "number" },
+      "ev_ebitda": { "type": "number" },
+      "dividend_yield": { "type": "number" },
+      "roe": { "type": "number" },
+      "roic": { "type": "number" },
+      "ebitda_margin": { "type": "number" },
+      "net_debt_ebitda": { "type": "number" },
+      "source_status": {
+        "type": "string",
+        "enum": ["oficial", "auxiliar", "estimado", "inferido", "nao_encontrado"]
+      }
+    },
+    "additionalProperties": true
+  }
+}

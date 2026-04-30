@@ -1,0 +1,16 @@
+{
+  "CMIG4": ["TAEE11", "CPFE3", "EGIE3", "TRPL4"],
+  "TAEE11": ["CMIG4", "TRPL4", "EGIE3", "CPFE3"],
+  "BBAS3": ["ITUB4", "BBDC4", "SANB11"],
+  "ITUB4": ["BBAS3", "BBDC4", "SANB11"],
+  "BBDC4": ["ITUB4", "BBAS3", "SANB11"],
+  "BBSE3": ["CXSE3", "PSSA3"],
+  "VALE3": ["PETR4", "CSNA3", "GGBR4"],
+  "PETR4": ["VALE3", "PRIO3", "RECV3"],
+  "LREN3": ["MGLU3", "GUAR3", "ARZZ3"],
+  "MGLU3": ["LREN3", "GUAR3", "VIIA3"],
+  "SAPR11": ["SBSP3", "CSMG3"],
+  "SBSP3": ["SAPR11", "CSMG3"],
+  "ITSA4": ["BRAP4", "BBSE3"],
+  "BRAP4": ["ITSA4", "VALE3"]
+}

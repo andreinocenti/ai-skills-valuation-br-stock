@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Financial statements",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "required": ["year", "revenue", "ebitda", "net_income", "equity", "operating_cash_flow", "capex", "free_cash_flow", "dividends_paid", "shares_outstanding", "gross_debt", "cash"],
+    "properties": {
+      "year": { "type": "integer" },
+      "period": { "type": "string", "default": "FY" },
+      "basis": { "type": "string", "enum": ["consolidado", "individual", "misto"], "default": "consolidado" },
+      "revenue": { "type": "number" },
+      "ebitda": { "type": "number" },
+      "ebit": { "type": "number" },
+      "net_income": { "type": "number" },
+      "net_income_adjusted": { "type": "number" },
+      "equity": { "type": "number" },
+      "operating_cash_flow": { "type": "number" },
+      "capex": { "type": "number" },
+      "free_cash_flow": { "type": "number" },
+      "free_cash_flow_adjusted": { "type": "number" },
+      "dividends_paid": { "type": "number" },
+      "dividends_recurring": { "type": "number" },
+      "extraordinary_dividends": { "type": "number" },
+      "shares_outstanding": { "type": "number", "exclusiveMinimum": 0 },
+      "gross_debt": { "type": "number" },
+      "cash": { "type": "number" },
+      "net_debt": { "type": "number" },
+      "depreciation_amortization": { "type": "number" },
+      "working_capital_change": { "type": "number" },
+      "net_debt_issuance": { "type": "number" },
+      "financial_expense": { "type": "number" },
+      "tax_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+      "source_status": {
+        "type": "string",
+        "enum": ["oficial", "auxiliar", "estimado", "inferido", "nao_encontrado"]
+      },
+      "non_recurring_items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["description", "impact"],
+          "properties": {
+            "description": { "type": "string" },
+            "impact": { "type": "number" },
+            "confidence": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    "additionalProperties": true
+  }
+}

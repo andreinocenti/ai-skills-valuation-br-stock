@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Source registry",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["name", "type", "status"],
+    "properties": {
+      "name": { "type": "string" },
+      "type": {
+        "type": "string",
+        "enum": ["oficial", "auxiliar", "estimado", "inferido", "nao_encontrado"]
+      },
+      "status": { "type": "string" },
+      "url": { "type": "string" },
+      "collected_at": { "type": "string" },
+      "notes": { "type": "string" }
+    },
+    "additionalProperties": true
+  }
+}

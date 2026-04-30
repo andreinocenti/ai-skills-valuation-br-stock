@@ -1,0 +1,4 @@
+interface:
+  display_name: "Valuation BR Stock"
+  short_description: "Valuation fundamentalista para acoes da B3"
+  default_prompt: "Use $valuation-br-stock para fazer o valuation completo de CMIG4 com foco em dividendos, preco teto e DCF."

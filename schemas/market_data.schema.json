@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Market data",
+  "type": "object",
+  "required": ["current_price"],
+  "properties": {
+    "current_price": { "type": "number", "exclusiveMinimum": 0 },
+    "price_date": { "type": "string" },
+    "price_history": { "type": "array", "items": { "type": "number" } },
+    "dividend_history": { "type": "array", "items": { "type": "number" } },
+    "source_status": {
+      "type": "string",
+      "enum": ["oficial", "auxiliar", "estimado", "inferido", "nao_encontrado"]
+    }
+  },
+  "additionalProperties": true
+}

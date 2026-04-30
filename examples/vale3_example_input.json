@@ -1,0 +1,18 @@
+{
+  "ticker": "VALE3",
+  "market": "B3",
+  "analysis_focus": "value",
+  "investment_horizon_years": 5,
+  "required_return": 0.14,
+  "desired_dividend_yields": [0.06, 0.08, 0.1, 0.12],
+  "margin_of_safety": 0.35,
+  "company": {"name": "Vale", "sector": "Mineracao e commodities", "share_class": "ON", "currency": "BRL"},
+  "market_data": {"current_price": 62.0, "dividend_history": [6.5, 9.2, 3.1, 5.4, 4.2]},
+  "financials": [
+    {"year": 2020, "revenue": 208000000000, "ebitda": 87000000000, "ebit": 73000000000, "net_income": 26000000000, "equity": 170000000000, "operating_cash_flow": 70000000000, "capex": 22000000000, "free_cash_flow": 48000000000, "dividends_paid": 24000000000, "shares_outstanding": 4800000000, "gross_debt": 68000000000, "cash": 42000000000, "depreciation_amortization": 14000000000, "working_capital_change": 3000000000, "tax_rate": 0.34},
+    {"year": 2021, "revenue": 293000000000, "ebitda": 158000000000, "ebit": 136000000000, "net_income": 121000000000, "equity": 225000000000, "operating_cash_flow": 132000000000, "capex": 26000000000, "free_cash_flow": 106000000000, "dividends_paid": 73000000000, "shares_outstanding": 4700000000, "gross_debt": 72000000000, "cash": 51000000000, "depreciation_amortization": 22000000000, "working_capital_change": 4000000000, "tax_rate": 0.34},
+    {"year": 2022, "revenue": 226000000000, "ebitda": 105000000000, "ebit": 85000000000, "net_income": 95000000000, "equity": 245000000000, "operating_cash_flow": 96000000000, "capex": 30000000000, "free_cash_flow": 66000000000, "dividends_paid": 42000000000, "shares_outstanding": 4600000000, "gross_debt": 76000000000, "cash": 42000000000, "depreciation_amortization": 20000000000, "working_capital_change": 5000000000, "tax_rate": 0.34},
+    {"year": 2023, "revenue": 210000000000, "ebitda": 82000000000, "ebit": 63000000000, "net_income": 41000000000, "equity": 238000000000, "operating_cash_flow": 72000000000, "capex": 31000000000, "free_cash_flow": 41000000000, "dividends_paid": 26000000000, "shares_outstanding": 4500000000, "gross_debt": 78000000000, "cash": 39000000000, "depreciation_amortization": 19000000000, "working_capital_change": 6000000000, "tax_rate": 0.34},
+    {"year": 2024, "revenue": 218000000000, "ebitda": 90000000000, "ebit": 70000000000, "net_income": 48000000000, "equity": 242000000000, "operating_cash_flow": 78000000000, "capex": 32000000000, "free_cash_flow": 46000000000, "dividends_paid": 24000000000, "shares_outstanding": 4450000000, "gross_debt": 81000000000, "cash": 41000000000, "depreciation_amortization": 20000000000, "working_capital_change": 5000000000, "tax_rate": 0.34}
+  ]
+}

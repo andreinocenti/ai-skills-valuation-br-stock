@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Ticker registry",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["ticker", "name", "cvm_code", "sector", "share_class", "currency"],
+    "properties": {
+      "ticker": {"type": "string"},
+      "name": {"type": "string"},
+      "cvm_code": {"type": "string"},
+      "cnpj": {"type": "string"},
+      "sector": {"type": "string"},
+      "subsector": {"type": "string"},
+      "segment": {"type": "string"},
+      "share_class": {"type": "string"},
+      "currency": {"type": "string"},
+      "ri_url": {"type": "string"}
+    },
+    "additionalProperties": true
+  }
+}

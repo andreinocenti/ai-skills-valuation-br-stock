@@ -1,0 +1,16 @@
+{
+  "ticker": "DYEX3",
+  "market": "B3",
+  "analysis_focus": "dividends",
+  "investment_horizon_years": 5,
+  "required_return": 0.13,
+  "desired_dividend_yields": [0.06, 0.08, 0.1, 0.12],
+  "margin_of_safety": 0.3,
+  "company": {"name": "Dividend Yield Extraordinario", "sector": "Energia eletrica", "share_class": "ON", "currency": "BRL"},
+  "market_data": {"current_price": 20.0, "dividend_history": [1.0, 1.1, 6.5]},
+  "financials": [
+    {"year": 2022, "revenue": 5000000000, "ebitda": 1200000000, "ebit": 950000000, "net_income": 700000000, "equity": 4200000000, "operating_cash_flow": 850000000, "capex": 300000000, "free_cash_flow": 550000000, "dividends_paid": 300000000, "extraordinary_dividends": 0, "shares_outstanding": 300000000, "gross_debt": 1800000000, "cash": 600000000, "depreciation_amortization": 250000000, "working_capital_change": 50000000, "tax_rate": 0.34},
+    {"year": 2023, "revenue": 5300000000, "ebitda": 1280000000, "ebit": 1000000000, "net_income": 760000000, "equity": 4500000000, "operating_cash_flow": 900000000, "capex": 320000000, "free_cash_flow": 580000000, "dividends_paid": 330000000, "extraordinary_dividends": 0, "shares_outstanding": 300000000, "gross_debt": 1750000000, "cash": 650000000, "depreciation_amortization": 280000000, "working_capital_change": 60000000, "tax_rate": 0.34},
+    {"year": 2024, "revenue": 5600000000, "ebitda": 1300000000, "ebit": 1020000000, "net_income": 780000000, "equity": 4700000000, "operating_cash_flow": 920000000, "capex": 340000000, "free_cash_flow": 580000000, "dividends_paid": 1950000000, "extraordinary_dividends": 1600000000, "shares_outstanding": 300000000, "gross_debt": 1700000000, "cash": 700000000, "depreciation_amortization": 280000000, "working_capital_change": 70000000, "tax_rate": 0.34, "non_recurring_items": [{"description": "Venda de ativo relevante", "impact": 250000000}]}
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dividend events",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["date", "amount_per_share", "event_type", "source_status"],
+    "properties": {
+      "date": {"type": "string"},
+      "payment_date": {"type": "string"},
+      "amount_per_share": {"type": "number"},
+      "event_type": {"type": "string", "enum": ["dividendo", "jcp", "extraordinario", "outro"]},
+      "is_recurring": {"type": "boolean"},
+      "source_status": {"type": "string"}
+    },
+    "additionalProperties": true
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "valuation-br-stock input",
+  "type": "object",
+  "required": [
+    "ticker",
+    "market",
+    "analysis_focus",
+    "investment_horizon_years",
+    "required_return",
+    "desired_dividend_yields",
+    "margin_of_safety",
+    "financials"
+  ],
+  "properties": {
+    "ticker": {
+      "type": "string"
+    },
+    "market": {
+      "type": "string",
+      "const": "B3"
+    },
+    "analysis_focus": {
+      "type": "string",
+      "enum": ["dividends", "value", "growth", "full"]
+    },
+    "investment_horizon_years": {
+      "type": "integer",
+      "minimum": 3,
+      "maximum": 10
+    },
+    "required_return": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "desired_dividend_yields": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    "margin_of_safety": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 0.8
+    },
+    "use_official_sources_only": {
+      "type": "boolean",
+      "default": false
+    },
+    "generate_full_report": {
+      "type": "boolean",
+      "default": true
+    },
+    "company": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "cnpj": { "type": "string" },
+        "cvm_code": { "type": "string" },
+        "sector": { "type": "string" },
+        "subsector": { "type": "string" },
+        "segment": { "type": "string" },
+        "share_class": { "type": "string" },
+        "shares_outstanding": { "type": "number" },
+        "free_float": { "type": "number" },
+        "ri_url": { "type": "string" },
+        "currency": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "market_data": {
+      "type": "object",
+      "required": ["current_price"],
+      "properties": {
+        "current_price": { "type": "number", "exclusiveMinimum": 0 },
+        "price_history": { "type": "array", "items": { "type": "number" } },
+        "dividend_history": {
+          "type": "array",
+          "items": { "type": "number", "minimum": 0 }
+        }
+      },
+      "additionalProperties": true
+    },
+    "financials": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "year",
+          "revenue",
+          "ebitda",
+          "net_income",
+          "equity",
+          "operating_cash_flow",
+          "capex",
+          "free_cash_flow",
+          "dividends_paid",
+          "shares_outstanding",
+          "gross_debt",
+          "cash"
+        ],
+        "properties": {
+          "year": { "type": "integer" },
+          "revenue": { "type": "number" },
+          "ebitda": { "type": "number" },
+          "ebit": { "type": "number" },
+          "net_income": { "type": "number" },
+          "equity": { "type": "number" },
+          "operating_cash_flow": { "type": "number" },
+          "capex": { "type": "number" },
+          "free_cash_flow": { "type": "number" },
+          "dividends_paid": { "type": "number" },
+          "shares_outstanding": { "type": "number", "exclusiveMinimum": 0 },
+          "gross_debt": { "type": "number" },
+          "cash": { "type": "number" },
+          "depreciation_amortization": { "type": "number", "default": 0 },
+          "working_capital_change": { "type": "number", "default": 0 },
+          "net_debt_issuance": { "type": "number", "default": 0 },
+          "tax_rate": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.34 },
+          "non_recurring_items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "description": { "type": "string" },
+                "impact": { "type": "number" }
+              },
+              "required": ["description", "impact"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "macro_data": {
+      "type": "object",
+      "properties": {
+        "selic": { "type": "number" },
+        "ipca": { "type": "number" },
+        "cdi": { "type": "number" },
+        "usd_brl": { "type": "number" }
+      },
+      "additionalProperties": true
+    },
+    "peers": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "sources": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "sotp_parts": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "asset_values": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    }
+  },
+  "additionalProperties": true
+}

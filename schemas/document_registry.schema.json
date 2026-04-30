@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Document registry",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["url", "document_type", "source_status"],
+    "properties": {
+      "url": {"type": "string"},
+      "path": {"type": "string"},
+      "document_type": {"type": "string"},
+      "year": {"type": "integer"},
+      "quarter": {"type": "integer"},
+      "source_status": {"type": "string"},
+      "notes": {"type": "string"}
+    },
+    "additionalProperties": true
+  }
+}

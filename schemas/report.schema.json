@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "valuation-br-stock report",
+  "type": "object",
+  "required": ["markdown", "json"],
+  "properties": {
+    "markdown": { "type": "string" },
+    "json": { "type": "object" }
+  },
+  "additionalProperties": false
+}

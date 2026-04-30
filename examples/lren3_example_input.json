@@ -1,0 +1,18 @@
+{
+  "ticker": "LREN3",
+  "market": "B3",
+  "analysis_focus": "full",
+  "investment_horizon_years": 5,
+  "required_return": 0.14,
+  "desired_dividend_yields": [0.06, 0.08, 0.1, 0.12],
+  "margin_of_safety": 0.35,
+  "company": {"name": "Lojas Renner", "sector": "Varejo", "share_class": "ON", "currency": "BRL"},
+  "market_data": {"current_price": 15.2, "dividend_history": [0.15, 0.2, 0.28, 0.32, 0.35]},
+  "financials": [
+    {"year": 2020, "revenue": 7500000000, "ebitda": 1100000000, "ebit": 700000000, "net_income": 330000000, "equity": 7800000000, "operating_cash_flow": 650000000, "capex": 600000000, "free_cash_flow": 50000000, "dividends_paid": 120000000, "shares_outstanding": 960000000, "gross_debt": 3600000000, "cash": 1800000000, "depreciation_amortization": 400000000, "working_capital_change": 200000000, "tax_rate": 0.34},
+    {"year": 2021, "revenue": 9800000000, "ebitda": 1500000000, "ebit": 1050000000, "net_income": 620000000, "equity": 8200000000, "operating_cash_flow": 980000000, "capex": 700000000, "free_cash_flow": 280000000, "dividends_paid": 180000000, "shares_outstanding": 960000000, "gross_debt": 3900000000, "cash": 1700000000, "depreciation_amortization": 450000000, "working_capital_change": 250000000, "tax_rate": 0.34},
+    {"year": 2022, "revenue": 11800000000, "ebitda": 1700000000, "ebit": 1180000000, "net_income": 760000000, "equity": 8600000000, "operating_cash_flow": 1100000000, "capex": 850000000, "free_cash_flow": 250000000, "dividends_paid": 240000000, "shares_outstanding": 960000000, "gross_debt": 4300000000, "cash": 1600000000, "depreciation_amortization": 520000000, "working_capital_change": 300000000, "tax_rate": 0.34},
+    {"year": 2023, "revenue": 12600000000, "ebitda": 1650000000, "ebit": 1100000000, "net_income": 700000000, "equity": 9000000000, "operating_cash_flow": 950000000, "capex": 900000000, "free_cash_flow": 50000000, "dividends_paid": 280000000, "shares_outstanding": 960000000, "gross_debt": 4700000000, "cash": 1500000000, "depreciation_amortization": 550000000, "working_capital_change": 350000000, "tax_rate": 0.34},
+    {"year": 2024, "revenue": 13400000000, "ebitda": 1800000000, "ebit": 1200000000, "net_income": 820000000, "equity": 9400000000, "operating_cash_flow": 1200000000, "capex": 920000000, "free_cash_flow": 280000000, "dividends_paid": 320000000, "shares_outstanding": 960000000, "gross_debt": 4900000000, "cash": 1550000000, "depreciation_amortization": 600000000, "working_capital_change": 380000000, "tax_rate": 0.34}
+  ]
+}

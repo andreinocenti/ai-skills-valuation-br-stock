@@ -1,0 +1,16 @@
+{
+  "ticker": "LOSS3",
+  "market": "B3",
+  "analysis_focus": "full",
+  "investment_horizon_years": 5,
+  "required_return": 0.16,
+  "desired_dividend_yields": [0.06, 0.08, 0.1, 0.12],
+  "margin_of_safety": 0.4,
+  "company": {"name": "Empresa Sem Lucro", "sector": "Varejo", "share_class": "ON", "currency": "BRL"},
+  "market_data": {"current_price": 5.0, "dividend_history": [0, 0, 0]},
+  "financials": [
+    {"year": 2022, "revenue": 1000000000, "ebitda": -50000000, "ebit": -90000000, "net_income": -120000000, "equity": 800000000, "operating_cash_flow": -60000000, "capex": 50000000, "free_cash_flow": -110000000, "dividends_paid": 0, "shares_outstanding": 300000000, "gross_debt": 500000000, "cash": 100000000, "depreciation_amortization": 40000000, "working_capital_change": 30000000, "tax_rate": 0.34},
+    {"year": 2023, "revenue": 1100000000, "ebitda": -20000000, "ebit": -60000000, "net_income": -80000000, "equity": 720000000, "operating_cash_flow": -40000000, "capex": 60000000, "free_cash_flow": -100000000, "dividends_paid": 0, "shares_outstanding": 300000000, "gross_debt": 620000000, "cash": 90000000, "depreciation_amortization": 40000000, "working_capital_change": 20000000, "tax_rate": 0.34},
+    {"year": 2024, "revenue": 1200000000, "ebitda": 10000000, "ebit": -30000000, "net_income": -50000000, "equity": 670000000, "operating_cash_flow": 5000000, "capex": 70000000, "free_cash_flow": -65000000, "dividends_paid": 0, "shares_outstanding": 300000000, "gross_debt": 700000000, "cash": 80000000, "depreciation_amortization": 40000000, "working_capital_change": 15000000, "tax_rate": 0.34}
+  ]
+}

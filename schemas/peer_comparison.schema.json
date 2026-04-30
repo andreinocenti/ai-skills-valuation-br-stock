@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Peer comparison",
+  "type": "object",
+  "required": ["available"],
+  "properties": {
+    "available": {"type": "boolean"},
+    "company": {"type": "object"},
+    "peer_average": {"type": "object"},
+    "relative_discount": {"type": "object"},
+    "peers": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

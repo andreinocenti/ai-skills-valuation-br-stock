@@ -1,0 +1,32 @@
+{
+  "ticker": "BBAS3",
+  "market": "B3",
+  "analysis_focus": "dividends",
+  "investment_horizon_years": 5,
+  "required_return": 0.13,
+  "desired_dividend_yields": [0.06, 0.08, 0.1, 0.12],
+  "margin_of_safety": 0.25,
+  "company": {
+    "name": "Banco do Brasil",
+    "sector": "Bancos",
+    "subsector": "Intermediacao financeira",
+    "share_class": "ON",
+    "currency": "BRL"
+  },
+  "market_data": {
+    "current_price": 27.5,
+    "price_history": [19.2, 21.4, 24.1, 25.7, 27.5],
+    "dividend_history": [1.4, 1.8, 2.1, 2.4, 2.8]
+  },
+  "financials": [
+    {"year": 2020, "revenue": 78000000000, "ebitda": 0, "ebit": 0, "net_income": 13000000000, "equity": 105000000000, "operating_cash_flow": 16000000000, "capex": 1000000000, "free_cash_flow": 15000000000, "dividends_paid": 5200000000, "shares_outstanding": 2865000000, "gross_debt": 0, "cash": 0, "depreciation_amortization": 0, "working_capital_change": 0, "net_debt_issuance": 0, "tax_rate": 0.34},
+    {"year": 2021, "revenue": 83500000000, "ebitda": 0, "ebit": 0, "net_income": 18000000000, "equity": 112000000000, "operating_cash_flow": 21000000000, "capex": 1100000000, "free_cash_flow": 19900000000, "dividends_paid": 7200000000, "shares_outstanding": 2865000000, "gross_debt": 0, "cash": 0, "depreciation_amortization": 0, "working_capital_change": 0, "net_debt_issuance": 0, "tax_rate": 0.34},
+    {"year": 2022, "revenue": 91000000000, "ebitda": 0, "ebit": 0, "net_income": 23500000000, "equity": 122000000000, "operating_cash_flow": 26000000000, "capex": 1200000000, "free_cash_flow": 24800000000, "dividends_paid": 9400000000, "shares_outstanding": 2865000000, "gross_debt": 0, "cash": 0, "depreciation_amortization": 0, "working_capital_change": 0, "net_debt_issuance": 0, "tax_rate": 0.34},
+    {"year": 2023, "revenue": 98000000000, "ebitda": 0, "ebit": 0, "net_income": 29000000000, "equity": 134000000000, "operating_cash_flow": 31500000000, "capex": 1300000000, "free_cash_flow": 30200000000, "dividends_paid": 11600000000, "shares_outstanding": 2865000000, "gross_debt": 0, "cash": 0, "depreciation_amortization": 0, "working_capital_change": 0, "net_debt_issuance": 0, "tax_rate": 0.34},
+    {"year": 2024, "revenue": 104000000000, "ebitda": 0, "ebit": 0, "net_income": 32500000000, "equity": 146000000000, "operating_cash_flow": 34500000000, "capex": 1400000000, "free_cash_flow": 33100000000, "dividends_paid": 13000000000, "shares_outstanding": 2865000000, "gross_debt": 0, "cash": 0, "depreciation_amortization": 0, "working_capital_change": 0, "net_debt_issuance": 0, "tax_rate": 0.34}
+  ],
+  "peers": [
+    {"ticker": "ITUB4", "p_l": 8.2, "p_vp": 1.7, "dividend_yield": 0.06, "roe": 0.2},
+    {"ticker": "BBDC4", "p_l": 9.0, "p_vp": 1.1, "dividend_yield": 0.05, "roe": 0.12}
+  ]
+}

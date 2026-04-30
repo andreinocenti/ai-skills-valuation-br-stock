@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dividend history",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["date", "amount_per_share", "type"],
+    "properties": {
+      "date": { "type": "string" },
+      "payment_date": { "type": "string" },
+      "amount_per_share": { "type": "number" },
+      "type": { "type": "string", "enum": ["dividendo", "jcp", "extraordinario", "outro"] },
+      "is_recurring": { "type": "boolean" },
+      "source_status": {
+        "type": "string",
+        "enum": ["oficial", "auxiliar", "estimado", "inferido", "nao_encontrado"]
+      }
+    },
+    "additionalProperties": true
+  }
+}
