@@ -12,7 +12,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from generate_report import render_dividend_events
-from valuation_core import calculate_valuation, enrich_financials_with_market_data, parse_cvm_dfp_zip, project_years, sector_key, sector_method_weights
+from valuation_core import (
+    build_bazin_ceiling,
+    calculate_valuation,
+    ddm_value,
+    enrich_financials_with_market_data,
+    parse_cvm_dfp_zip,
+    project_years,
+    sector_key,
+    sector_method_weights,
+)
+from pipeline.run_collection_pipeline import infer_required_return
 
 
 def assert_close(actual, expected, tolerance=1e-6):
@@ -178,8 +188,34 @@ def test_ceiling_prices_are_split_between_base_and_risk_adjusted():
     data = json.loads((ROOT / "examples" / "example_input.json").read_text(encoding="utf-8"))
     data["margin_of_safety"] = 0.25
     valuation = calculate_valuation(data)
-    assert_close(valuation["suggested_ceiling_price"], valuation["base_ceiling_price"])
+    ceilings = valuation["ceiling_prices"]
+    assert_close(valuation["suggested_ceiling_price"], ceilings["recommended"]["price"])
+    assert_close(valuation["base_ceiling_price"], ceilings["intrinsic_margin"]["ceiling_price"])
     assert_true("risk_adjusted_ceiling_price" in valuation, "risk-adjusted ceiling should be explicit")
+    assert_true(ceilings["recommended"]["method"], ceilings["recommended"])
+
+
+def test_required_return_uses_macro_and_is_not_fixed_at_12_percent():
+    assert_true(infer_required_return({"selic": 14.5}) > 0.12, "high Selic should produce Ke above 12%")
+    assert_close(infer_required_return({"selic": 14.5}), 0.175)
+
+
+def test_bazin_classic_and_conservative_are_separate():
+    policy = {
+        "annual_dpa_median": 1.20,
+        "annual_dpa_mean": 1.30,
+        "safe_dividend_per_share": 0.84,
+        "method_action": "calculate_but_exclude_from_weighted_fair_value",
+    }
+    bazin = build_bazin_ceiling(policy, [0.06, 0.08, 0.10, 0.12], {"selic": 10.0})
+    assert_close(bazin["classic"]["0.08"], 15.0)
+    assert_close(bazin["conservative"]["0.08"], 10.5)
+    assert_true(bazin["selected_yield"] == 0.10, bazin)
+
+
+def test_ddm_is_invalid_when_ke_is_not_above_growth():
+    assert_true(ddm_value(1.0, 0.08, 0.09) is None, "DDM must not apply when Ke <= g")
+    assert_close(ddm_value(1.0, 0.12, 0.04), 12.5)
 
 
 def test_sector_weights_are_distinct_and_complete():
@@ -204,6 +240,13 @@ def test_holding_without_sotp_is_limited():
     assert_true(any("Holding sem SOTP/NAV" in item for item in valuation["limitations"]), valuation["limitations"])
 
 
+def test_report_exposes_skill_and_engine_versions():
+    data = json.loads((ROOT / "examples" / "example_input.json").read_text(encoding="utf-8"))
+    valuation = calculate_valuation(data)
+    assert_true(valuation["skill_version"] == "valuation-br-stock", valuation.get("skill_version"))
+    assert_true(valuation["calculation_metadata"]["engine_version"], valuation["calculation_metadata"])
+
+
 def main():
     test_peter_lynch_scale()
     test_projection_uses_operating_margins()
@@ -214,9 +257,13 @@ def main():
     test_irregular_dividends_do_not_drive_weighted_fair_value()
     test_paper_and_pulp_is_cyclical_sector()
     test_ceiling_prices_are_split_between_base_and_risk_adjusted()
+    test_required_return_uses_macro_and_is_not_fixed_at_12_percent()
+    test_bazin_classic_and_conservative_are_separate()
+    test_ddm_is_invalid_when_ke_is_not_above_growth()
     test_sector_weights_are_distinct_and_complete()
     test_commodity_uses_normalized_ev_ebitda()
     test_holding_without_sotp_is_limited()
+    test_report_exposes_skill_and_engine_versions()
     print("ok")
 
 
