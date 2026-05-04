@@ -102,6 +102,7 @@ Consulte [references/valuation_methods.md](references/valuation_methods.md) e [r
 
 Antes de concluir:
 
+- declare `skill_version` e `engine_version` no Markdown e no JSON final
 - declare `confidence`
 - liste dados faltantes e inferencias
 - explique premissas por ano
@@ -150,6 +151,7 @@ Use coletores/parsers conforme a fonte:
 Capacidade automatica atual:
 
 - Para tickers mapeados em `references/ticker_registry.json`, a pipeline resolve empresa, codigo CVM, setor, classe, RI, DFP, ITR, cotacao, dividendos auxiliares, macro e pares setoriais mapeados.
+- Para tickers B3 validos fora do registry local, a pipeline deve tentar resolucao auxiliar de perfil/codigo CVM e entao confirmar/enriquecer com CVM quando possivel.
 - Quando a CVM/B3/RI ou provedor auxiliar falhar, o output deve manter dados parciais, marcar a fonte como `not_found` ou `auxiliar` e declarar a limitacao.
 - Comparacao com pares e RI ainda dependem da disponibilidade de documentos e multiplos coletaveis; nao invente multiplos ausentes.
 
@@ -173,6 +175,9 @@ Quando o usuario informar apenas um ticker:
 
 ## Reporting Rules
 
+- Sempre mostre a versao no `Resumo executivo` e em `Cotacao atual e visao geral`:
+  - `Versao da skill: valuation-br-stock`
+  - `Versao do motor: <calculation_metadata.engine_version ou nao informada>`
 - Classifique a oportunidade como `Evitar`, `Cara`, `Justa`, `Interessante` ou `Atrativa com margem de seguranca`.
 - Separe qualidade da empresa de atratividade do preco.
 - Nao faca promessa de retorno.

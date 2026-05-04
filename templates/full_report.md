@@ -10,6 +10,8 @@
 {{ sources_block }}
 
 ## 4. Cotacao atual e visao geral
+- Versao da skill: {{ skill_version }}
+- Versao do motor: {{ engine_version }}
 {{ market_overview }}
 
 ## 5. Diagnostico fundamentalista

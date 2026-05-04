@@ -7,6 +7,8 @@
 ## 2. Dados da empresa
 ## 3. Fontes utilizadas
 ## 4. Cotacao atual e visao geral
+- Versao da skill: [skill_version]
+- Versao do motor: [engine_version]
 ## 5. Diagnostico fundamentalista
 ## 6. Qualidade do lucro
 ## 7. Dividendos e payout
@@ -29,6 +31,7 @@
 Inclua:
 
 - `ticker`
+- `skill_version`
 - `company_name`
 - `current_price`
 - `fair_value_base`

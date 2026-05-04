@@ -18,6 +18,14 @@
 - Nao projete ultimo pico como recorrente.
 - Exija margem de seguranca maior.
 
+## Papel e Celulose
+
+- Trate como setor ciclico de capital intensivo, mas nao como commodity generica.
+- Use EV/EBITDA normalizado e DCF FCFE/FCFF com pesos relevantes.
+- Compare EBITDA historico, TTM e capacidade normalizada; evite punir duas vezes ciclo e alavancagem.
+- Mostre faixas de preco teto com 15%, 20%, 25% e margem ajustada ao risco.
+- Se a empresa estiver em ciclo de CAPEX ou desalavancagem, destaque que o valor justo depende do EBITDA forward e da reducao de divida.
+
 ## Varejo
 
 - Priorize caixa, capital de giro, margem e alavancagem.
