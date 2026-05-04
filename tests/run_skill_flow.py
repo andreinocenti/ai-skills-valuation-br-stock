@@ -21,7 +21,29 @@ def run(command):
     return subprocess.check_output(command, text=True)
 
 
+def test_analyze_ticker_writes_support_reports_to_output_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp) / "reports"
+        payload = json.loads(run([
+            sys.executable,
+            "-B",
+            str(ROOT / "scripts" / "analyze_ticker.py"),
+            "INVALID",
+            "--output-dir",
+            str(output_dir),
+            "--cache-dir",
+            str(Path(tmp) / "cache"),
+        ]))
+        support = payload.get("support_reports", {})
+        analysis_path = output_dir / "invalid-analysis.json"
+        assert analysis_path.exists(), "analysis JSON should be written for support/debugging"
+        assert support.get("json") == str(analysis_path), support
+        assert payload["ok"] is False, payload
+
+
 def main():
+    test_analyze_ticker_writes_support_reports_to_output_dir()
+
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         for example in EXAMPLES:

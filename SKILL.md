@@ -170,8 +170,18 @@ Quando os dados de entrada estiverem em JSON:
 Quando o usuario informar apenas um ticker:
 
 1. Rode `scripts/analyze_ticker.py <TICKER>`.
-2. Se `ok` for `true`, entregue o `report.markdown` e destaque as fontes/limitacoes.
-3. Se `ok` for `false`, entregue o dataset parcial, explique quais fontes falharam e solicite os dados faltantes.
+2. Grave os relatorios de suporte em `~/.valuation-stock-br/` por padrao:
+   - `<ticker>-analysis.json`
+   - `<ticker>-report.md` quando `ok=true`
+   - `cache/` para documentos CVM/B3 baixados pela pipeline
+3. Se `ok` for `true`, entregue o `report.markdown` e destaque as fontes/limitacoes.
+4. Se `ok` for `false`, entregue o dataset parcial, explique quais fontes falharam e solicite os dados faltantes.
+
+Politica de reutilizacao:
+
+- Relatorios de suporte (`*-analysis.json` e `*-report.md`) sao sobrescritos a cada nova analise do mesmo ticker, para evitar entregar valuation antigo como se fosse atual.
+- O cache bruto em `~/.valuation-stock-br/cache/` pode ser reutilizado quando o arquivo baixado ja existir, especialmente zips historicos da CVM.
+- Para preservar uma analise antiga, copie ou renomeie o arquivo antes de executar novamente.
 
 ## Reporting Rules
 

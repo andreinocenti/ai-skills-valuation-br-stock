@@ -24,6 +24,9 @@ from valuation_core import (
 )
 
 
+DEFAULT_OUTPUT_DIR = Path.home() / ".valuation-stock-br"
+
+
 def default_years(count=7):
     last_year = date.today().year - 1
     return list(range(last_year - count + 1, last_year + 1))
@@ -101,7 +104,7 @@ def clamp_required_return(spot_required_return):
 def main():
     parser = argparse.ArgumentParser(description="Collect public data and build valuation input for a B3 ticker.")
     parser.add_argument("ticker")
-    parser.add_argument("--cache-dir", default="/tmp/valuation-br-stock-cache")
+    parser.add_argument("--cache-dir", default=str(DEFAULT_OUTPUT_DIR / "cache"))
     parser.add_argument("--years", help="Comma-separated DFP years, e.g. 2020,2021,2022,2023,2024")
     parser.add_argument("--no-macro", action="store_true")
     args = parser.parse_args()
