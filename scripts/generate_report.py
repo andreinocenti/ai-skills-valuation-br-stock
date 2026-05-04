@@ -191,10 +191,22 @@ def render_risks(risks):
     ])
 
 
+def render_future_impacts(items):
+    if not items:
+        return "- Nenhum cenario adicional informado"
+    return lines([
+        f"- {item.get('title', 'cenario')}: impacto {item.get('impact', 'n/a')} | efeito no valuation {item.get('effect_on_valuation', 'n/a')} | leitura {item.get('summary', 'n/a')}"
+        for item in items
+    ])
+
+
 def generate_markdown(valuation, sensitivity):
     latest = valuation["financial_diagnosis"]["latest"]
     divs = valuation["financial_diagnosis"]["dividends"]
     base = valuation["scenarios"]["base"]
+    payout_profile = valuation.get("diagnosis", {}).get("payout_profile", {})
+    projection_policy = valuation.get("calculation_metadata", {}).get("projection_policy", {})
+    projected_basis = valuation.get("projected_ceiling_by_basis", {})
     return f"""# Valuation de {valuation['ticker']} - {valuation['company_name']}
 
 ## 1. Resumo executivo
@@ -246,6 +258,8 @@ def generate_markdown(valuation, sensitivity):
 - Yield mediano: {pct(divs.get('yield_median'))}
 - Crescimento de DPA: {pct(divs.get('dpa_growth'))}
 - Estabilidade: {divs.get('stability')}
+- Payout medio 5 anos: {pct(payout_profile.get('average_5y'))}
+- Payout medio 10 anos: {pct(payout_profile.get('average_10y'))}
 - Yield on cost projetado no ano 5: {pct(valuation['projected_yield_on_cost_year_5'])}
 
 ### Eventos de dividendos
@@ -260,6 +274,12 @@ def generate_markdown(valuation, sensitivity):
 - Cobertura de juros: {latest.get('interest_coverage')}
 
 ## 9. Projecoes ano a ano
+- Horizonte usado: {valuation.get('calculation_metadata', {}).get('investment_horizon_years')} anos
+- Porte inferido: {valuation.get('calculation_metadata', {}).get('company_size_segment')}
+- Inflacao usada do ano 2 em diante: {pct(projection_policy.get('inflation_growth_rate'))}
+- Crescimento maximo por Peter Lynch: {pct(valuation.get('diagnosis', {}).get('peter_lynch_expected_growth_rate'))}
+- ROE projetado no primeiro ano: {pct(valuation.get('diagnosis', {}).get('projected_roe'))}
+- ROE projetado no ultimo ano: {pct(valuation.get('diagnosis', {}).get('projected_roe_year_final'))}
 {render_projection(base['projections'])}
 
 ## 10. Metodos de valuation
@@ -281,6 +301,12 @@ def generate_markdown(valuation, sensitivity):
 - Preco teto projetivo: {brl(valuation['projected_ceiling_price'])}
 {render_projected_ceiling_prices(valuation.get('projected_ceiling_prices', []))}
 
+### Teto projetivo por base
+- Lucro liquido: {brl((projected_basis.get('net_income') or {}).get('final_year', {}).get('ceiling_price'))}
+- Fluxo de caixa livre: {brl((projected_basis.get('free_cash_flow') or {}).get('final_year', {}).get('ceiling_price'))}
+- Lucro liquido sem margem: {brl((projected_basis.get('net_income') or {}).get('final_year', {}).get('future_fair_value'))}
+- Fluxo de caixa livre sem margem: {brl((projected_basis.get('free_cash_flow') or {}).get('final_year', {}).get('future_fair_value'))}
+
 ## 14. Reverse DCF
 - Crescimento implicito: {pct(valuation['valuation']['reverse_dcf'].get('implied_growth'))}
 
@@ -289,6 +315,9 @@ def generate_markdown(valuation, sensitivity):
 
 ## 16. Riscos
 {render_risks(valuation['risks'])}
+
+### Cenarios futuros de impacto
+{render_future_impacts(valuation.get('future_impacts', []))}
 
 ## 17. Score final
 - Score de qualidade: {valuation['quality_score']}/100

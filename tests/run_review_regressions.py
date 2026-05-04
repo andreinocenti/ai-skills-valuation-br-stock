@@ -276,64 +276,281 @@ def test_report_exposes_skill_and_engine_versions():
     assert_true(valuation["calculation_metadata"]["engine_version"], valuation["calculation_metadata"])
 
 
-def projected_ceiling_fixture(ticker, sector, scale):
+def fixture_klbn4():
+    shares = 3.78e9
+    payout = 0.42
     financials = []
-    for index, year in enumerate(range(2020, 2025)):
-        revenue = 1000.0 * (1.06 ** index) * scale
-        net_income = 140.0 * (1.07 ** index) * scale
-        equity = 900.0 * (1.05 ** index) * scale
-        ebitda = 280.0 * (1.06 ** index) * scale
-        ebit = 220.0 * (1.06 ** index) * scale
-        operating_cash_flow = 180.0 * (1.06 ** index) * scale
-        capex = 55.0 * (1.04 ** index) * scale
+    revenue = 14.0e9
+    net_income = 0.75e9
+    equity = 7.2e9
+    free_cash_flow = 1.0e9
+    for year in range(2015, 2025):
         financials.append({
             "year": year,
             "revenue": revenue,
-            "ebitda": ebitda,
-            "ebit": ebit,
+            "ebitda": revenue * 0.28,
+            "ebit": revenue * 0.19,
             "net_income": net_income,
             "equity": equity,
-            "operating_cash_flow": operating_cash_flow,
-            "capex": capex,
-            "free_cash_flow": operating_cash_flow - capex,
-            "dividends_paid": net_income * 0.45,
-            "shares_outstanding": 100.0,
-            "gross_debt": 250.0 * scale,
-            "cash": 80.0 * scale,
-            "depreciation_amortization": 60.0 * scale,
-            "working_capital_change": 5.0 * scale,
+            "operating_cash_flow": free_cash_flow + 0.8e9,
+            "capex": 0.9e9,
+            "free_cash_flow": free_cash_flow,
+            "dividends_paid": net_income * payout,
+            "shares_outstanding": shares,
+            "gross_debt": 12.0e9,
+            "cash": 3.4e9,
+            "depreciation_amortization": 1.2e9,
+            "working_capital_change": 0.15e9,
             "net_debt_issuance": 0.0,
             "tax_rate": 0.34,
         })
+        revenue *= 1.05
+        net_income *= 1.05
+        equity *= 1.045
+        free_cash_flow *= 1.07
+    financials[-1]["net_income"] = 0.74e9
+    financials[-1]["equity"] = 10.05e9
+    financials[-1]["free_cash_flow"] = 1.9e9
+    financials[-1]["operating_cash_flow"] = 2.7e9
+    financials[-1]["dividends_paid"] = 0.74e9 * payout
     return {
-        "ticker": ticker,
+        "ticker": "KLBN4",
         "market": "B3",
-        "investment_horizon_years": 5,
-        "required_return": None,
+        "required_return": 0.20,
         "margin_of_safety": 0.20,
-        "desired_dividend_yields": [0.06, 0.08, 0.10, 0.12],
-        "company": {"name": ticker, "sector": sector},
-        "market_data": {"current_price": 10.0 * scale},
-        "macro_data": {"selic": 14.5, "ipca_12m_estimated": 4.1},
+        "company": {"name": "Klabin", "sector": "Papel e Celulose", "subsector": "Madeira e Papel", "share_class": "PN"},
+        "market_data": {"current_price": 3.63},
+        "projection_policy": {
+            "company_size": "small_cap",
+            "inflation_growth_rate": 0.05,
+            "current_year_only_explicit_growth": True,
+            "max_growth_rate": 0.05,
+        },
+        "projection_overrides": {
+            "current_year_net_income": 1.25e9,
+            "current_year_free_cash_flow": 2.1e9,
+        },
+        "future_impacts": [{
+            "title": "Capex florestal e expansao",
+            "impact": "medium",
+            "effect_on_valuation": "pressiona o FCF de curto prazo e sustenta opcionalidade no longo prazo",
+            "summary": "Klabin exige disciplina de capital; a geracao de caixa futura responde mais ao FCF do que ao lucro contabil.",
+        }],
+        "financials": financials,
+    }
+
+
+def fixture_abcb4():
+    shares = 166.3e6
+    payout = 0.50
+    financials = []
+    revenue = 3.6e9
+    net_income = 0.55e9
+    equity = 4.8e9
+    for year in range(2015, 2025):
+        financials.append({
+            "year": year,
+            "revenue": revenue,
+            "ebitda": 0.0,
+            "ebit": 0.0,
+            "net_income": net_income,
+            "equity": equity,
+            "operating_cash_flow": net_income * 1.10,
+            "capex": 0.08e9,
+            "free_cash_flow": net_income,
+            "dividends_paid": net_income * payout,
+            "shares_outstanding": shares,
+            "gross_debt": 0.0,
+            "cash": 0.0,
+            "depreciation_amortization": 0.0,
+            "working_capital_change": 0.0,
+            "net_debt_issuance": 0.0,
+            "tax_rate": 0.34,
+        })
+        revenue *= 1.06
+        net_income *= 1.06
+        equity *= 1.055
+    financials[-1]["net_income"] = 0.936e9
+    financials[-1]["equity"] = 7.2e9
+    financials[-1]["dividends_paid"] = 0.936e9 * payout
+    return {
+        "ticker": "ABCB4",
+        "market": "B3",
+        "required_return": 0.15,
+        "margin_of_safety": 0.15,
+        "company": {"name": "Banco ABC Brasil", "sector": "Bancos", "share_class": "PN"},
+        "market_data": {"current_price": 24.97},
+        "projection_policy": {
+            "company_size": "small_cap",
+            "inflation_growth_rate": 0.05,
+            "current_year_only_explicit_growth": True,
+            "max_growth_rate": 0.065,
+        },
+        "projection_overrides": {"current_year_net_income": 1.0e9},
+        "future_impacts": [{
+            "title": "Custo de funding e credito corporativo",
+            "impact": "medium",
+            "effect_on_valuation": "altera spread, ROE e payout sustentavel",
+            "summary": "A tese depende de manter ROE de dois digitos sem compressao relevante de margem financeira.",
+        }],
+        "financials": financials,
+    }
+
+
+def fixture_sapr4():
+    shares = 1.076e9
+    payout = 0.29
+    financials = []
+    revenue = 5.5e9
+    net_income = 0.8e9
+    equity = 5.0e9
+    free_cash_flow = 0.85e9
+    for year in range(2015, 2025):
+        financials.append({
+            "year": year,
+            "revenue": revenue,
+            "ebitda": revenue * 0.37,
+            "ebit": revenue * 0.28,
+            "net_income": net_income,
+            "equity": equity,
+            "operating_cash_flow": free_cash_flow + 0.25e9,
+            "capex": 0.22e9,
+            "free_cash_flow": free_cash_flow,
+            "dividends_paid": net_income * payout,
+            "shares_outstanding": shares,
+            "gross_debt": 2.2e9,
+            "cash": 0.7e9,
+            "depreciation_amortization": 0.5e9,
+            "working_capital_change": 0.05e9,
+            "net_debt_issuance": 0.0,
+            "tax_rate": 0.34,
+        })
+        revenue *= 1.045
+        net_income *= 1.07
+        equity *= 1.06
+        free_cash_flow *= 1.06
+    financials[-1]["net_income"] = 1.33e9
+    financials[-1]["equity"] = 7.9e9
+    financials[-1]["dividends_paid"] = 1.33e9 * payout
+    financials[-1]["free_cash_flow"] = 1.1e9
+    financials[-1]["operating_cash_flow"] = 1.35e9
+    return {
+        "ticker": "SAPR4",
+        "market": "B3",
+        "required_return": 0.15,
+        "margin_of_safety": 0.15,
+        "company": {"name": "Sanepar", "sector": "Saneamento", "share_class": "PN"},
+        "market_data": {"current_price": 8.12},
+        "projection_policy": {
+            "company_size": "small_cap",
+            "inflation_growth_rate": 0.05,
+            "current_year_only_explicit_growth": True,
+            "max_growth_rate": 0.1195,
+        },
+        "projection_overrides": {"current_year_net_income": 1.5e9},
+        "future_impacts": [{
+            "title": "Revisao tarifaria e capex regulado",
+            "impact": "medium",
+            "effect_on_valuation": "mexe em margem, payout e velocidade de realizacao do valor",
+            "summary": "Utility regulada comporta desconto menor, mas ainda depende da execucao regulatoria e operacional.",
+        }],
+        "financials": financials,
+    }
+
+
+def fixture_bbas3():
+    shares = 3.83e9
+    payout = 0.2837
+    financials = []
+    revenue = 92.0e9
+    net_income = 10.0e9
+    equity = 145.0e9
+    for year in range(2015, 2025):
+        financials.append({
+            "year": year,
+            "revenue": revenue,
+            "ebitda": 0.0,
+            "ebit": 0.0,
+            "net_income": net_income,
+            "equity": equity,
+            "operating_cash_flow": net_income * 1.05,
+            "capex": 1.2e9,
+            "free_cash_flow": net_income,
+            "dividends_paid": net_income * payout,
+            "shares_outstanding": shares,
+            "gross_debt": 0.0,
+            "cash": 0.0,
+            "depreciation_amortization": 0.0,
+            "working_capital_change": 0.0,
+            "net_debt_issuance": 0.0,
+            "tax_rate": 0.34,
+        })
+        revenue *= 1.05
+        net_income *= 1.08
+        equity *= 1.045
+    financials[-1]["net_income"] = 19.6e9
+    financials[-1]["equity"] = 224.0e9
+    financials[-1]["dividends_paid"] = 19.6e9 * payout
+    return {
+        "ticker": "BBAS3",
+        "market": "B3",
+        "required_return": 0.20,
+        "margin_of_safety": 0.20,
+        "company": {"name": "Banco do Brasil", "sector": "Bancos", "share_class": "ON"},
+        "market_data": {"current_price": 24.46},
+        "projection_policy": {
+            "inflation_growth_rate": 0.05,
+            "current_year_only_explicit_growth": True,
+            "max_growth_rate": 0.0627,
+        },
+        "projection_overrides": {"current_year_net_income": 20.7e9},
+        "future_impacts": [{
+            "title": "Credito, agro e governanca de capital",
+            "impact": "medium",
+            "effect_on_valuation": "mexe no crescimento sustentavel e no desconto aplicado ao banco",
+            "summary": "O valuation precisa refletir qualidade de capital e a sustentabilidade do payout em ambiente macro mais duro.",
+        }],
         "financials": financials,
     }
 
 
 def test_requested_projected_ceiling_acceptance_targets():
-    cases = [
-        ("KLBN4", "Papel e Celulose", 0.24502024061320754, 3.71, "pulp_paper"),
-        ("ABCB4", "Bancos", 2.7471869975087833, 32.99, "banks"),
-        ("SAPR4", "Saneamento", 0.8198174365625573, 9.43, "utilities"),
-        ("BBAS3", "Bancos", 2.257539845499128, 27.11, "banks"),
-    ]
-    for ticker, sector, scale, expected, expected_sector in cases:
-        valuation = calculate_valuation(projected_ceiling_fixture(ticker, sector, scale))
-        assert_true(valuation["ticker"] == ticker, valuation["ticker"])
-        assert_true(valuation["calculation_metadata"]["sector_key"] == expected_sector, valuation["calculation_metadata"])
-        assert_close(round(valuation["projected_ceiling_price"], 2), expected, 0.01)
-        assert_true(valuation["valuation"]["peter_lynch"]["applicable"], valuation["valuation"]["peter_lynch"])
-        assert_true(valuation["financial_diagnosis"]["latest"]["roe"] is not None, valuation["financial_diagnosis"]["latest"])
-        assert_true(valuation["financial_diagnosis"]["latest"]["payout_adjusted"] is not None, valuation["financial_diagnosis"]["latest"])
+    klbn4 = calculate_valuation(fixture_klbn4())
+    assert_true(klbn4["calculation_metadata"]["sector_key"] == "pulp_paper", klbn4["calculation_metadata"])
+    assert_true(klbn4["calculation_metadata"]["company_size_segment"] == "small_cap", klbn4["calculation_metadata"])
+    assert_true(klbn4["calculation_metadata"]["investment_horizon_years"] == 5, klbn4["calculation_metadata"])
+    assert_close(round(klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["ceiling_price"], 2), 3.71, 0.02)
+    assert_close(round(klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"]["ceiling_price"], 2), 3.51, 0.03)
+    assert_close(round(klbn4["diagnosis"]["projected_roe"] * 100, 2), 11.65, 0.08)
+    assert_close(round((klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["ceiling_price"] / 3.63 - 1) * 100, 2), 2.19, 0.10)
+
+    abcb4 = calculate_valuation(fixture_abcb4())
+    assert_true(abcb4["calculation_metadata"]["sector_key"] == "banks", abcb4["calculation_metadata"])
+    assert_true(abcb4["calculation_metadata"]["company_size_segment"] == "small_cap", abcb4["calculation_metadata"])
+    assert_true(abcb4["calculation_metadata"]["investment_horizon_years"] == 5, abcb4["calculation_metadata"])
+    assert_close(round(abcb4["suggested_ceiling_price"], 2), 32.99, 0.03)
+    assert_close(round(abcb4["diagnosis"]["projected_roe"] * 100, 2), 13.00, 0.05)
+    assert_close(round(abcb4["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 6.50, 0.05)
+    assert_close(round((abcb4["suggested_ceiling_price"] / 24.97 - 1) * 100, 2), 32.11, 0.10)
+
+    sapr4 = calculate_valuation(fixture_sapr4())
+    assert_true(sapr4["calculation_metadata"]["sector_key"] == "utilities", sapr4["calculation_metadata"])
+    assert_true(sapr4["calculation_metadata"]["company_size_segment"] == "small_cap", sapr4["calculation_metadata"])
+    assert_true(sapr4["calculation_metadata"]["investment_horizon_years"] == 5, sapr4["calculation_metadata"])
+    assert_close(round(sapr4["suggested_ceiling_price"], 2), 9.43, 0.03)
+    assert_close(round(sapr4["diagnosis"]["projected_roe"] * 100, 2), 16.84, 0.15)
+    assert_close(round(sapr4["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 11.95, 0.05)
+    assert_close(round((sapr4["suggested_ceiling_price"] / 8.12 - 1) * 100, 2), 16.11, 0.12)
+
+    bbas3 = calculate_valuation(fixture_bbas3())
+    assert_true(bbas3["ticker"] == "BBAS3", bbas3["ticker"])
+    assert_true(bbas3["calculation_metadata"]["sector_key"] == "banks", bbas3["calculation_metadata"])
+    assert_true(bbas3["calculation_metadata"]["company_size_segment"] == "large_cap", bbas3["calculation_metadata"])
+    assert_true(bbas3["calculation_metadata"]["investment_horizon_years"] == 3, bbas3["calculation_metadata"])
+    assert_close(round(bbas3["base_ceiling_price"], 2), 27.11, 0.05)
+    assert_close(round(bbas3["diagnosis"]["projected_roe"] * 100, 2), 8.67, 0.05)
+    assert_close(round(bbas3["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 6.27, 0.05)
+    assert_close(round(bbas3["diagnosis"]["payout_profile"]["average_5y"] * 100, 2), 28.37, 0.01)
 
 
 def main():

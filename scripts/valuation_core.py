@@ -21,7 +21,7 @@ SOURCE_ESTIMATED = "estimado"
 SOURCE_INFERRED = "inferido"
 SOURCE_NOT_FOUND = "nao_encontrado"
 SKILL_VERSION = "valuation-br-stock"
-CALCULATION_ENGINE_VERSION = "valuation-br-stock-2026-04-30-ceiling-v3"
+CALCULATION_ENGINE_VERSION = "valuation-br-stock-2026-05-04-cli-projection-v4"
 
 VERDICTS = [
     "Evitar",
@@ -70,6 +70,7 @@ KNOWN_B3_COMPANIES = {
     "BBDC4": {"name": "BRADESCO", "cvm_code": "906", "sector": "Bancos", "share_class": "PN"},
     "TAEE11": {"name": "TAESA", "cvm_code": "20257", "sector": "Energia eletrica", "share_class": "UNIT"},
     "BBSE3": {"name": "BB SEGURIDADE", "cvm_code": "23159", "sector": "Seguradoras", "share_class": "ON"},
+    "KLBN4": {"name": "KLABIN", "cvm_code": "12653", "sector": "Papel e celulose", "share_class": "PN"},
     "LREN3": {"name": "LOJAS RENNER", "cvm_code": "8133", "sector": "Varejo", "share_class": "ON"},
     "MGLU3": {"name": "MAGAZINE LUIZA", "cvm_code": "22470", "sector": "Varejo", "share_class": "ON"},
     "SAPR11": {"name": "SANEPAR", "cvm_code": "18627", "sector": "Saneamento", "share_class": "UNIT"},
@@ -510,9 +511,10 @@ def normalize_cyclical_financials(financials: list[dict[str, Any]], sector: str)
 
 def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[str, dict[str, Any]]:
     financials = order_years(data["financials"])
-    years = data.get("investment_horizon_years", 5)
+    years = resolve_investment_horizon_years(data)
     required_return = data.get("required_return", 0.12)
     sector = sector_key(data.get("company", {}))
+    projection_policy = data.get("projection_policy", {}) or {}
     terminal_policy = terminal_growth_policy(data, sector)
     normalized_rows = normalize_cyclical_financials(financials, sector)
     revenue_growth = cagr(normalized_rows[0].get("revenue"), normalized_rows[-1].get("revenue"), len(normalized_rows) - 1)
@@ -525,11 +527,22 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
     payouts = [row.get("dividends_recurring", row.get("dividends_paid", 0)) / row.get("net_income_adjusted", row.get("net_income", 1)) for row in financials if row.get("net_income_adjusted", row.get("net_income", 0)) > 0]
     margin = average(margins) or 0.08
     payout = average(payouts) or 0.35
+    payout_stats = payout_profile(financials)
+    roe = latest_roe(indicators)
+    peter_lynch_growth = peter_lynch_expected_growth_rate(roe, payout_stats.get("reference"))
+    growth_cap = projection_policy.get("max_growth_rate")
+    if growth_cap is None:
+        growth_cap = peter_lynch_growth if peter_lynch_growth is not None else 0.08
+    growth_cap = clamp(float(growth_cap), 0.03, 0.18)
+    inflation_growth = clamp(float(projection_policy.get("inflation_growth_rate", 0.05)), 0.0, 0.12)
+    base_income_growth = clamp(min(income_growth, growth_cap), -0.02, growth_cap)
+    conservative_income_growth = clamp(min(base_income_growth - 0.01, growth_cap), -0.03, growth_cap)
+    optimistic_income_growth = clamp(min(base_income_growth + 0.01, growth_cap), 0.0, growth_cap)
     operating = historical_operating_profile(normalized_rows)
     return {
         "conservative": {
             "revenue_growth": clamp(revenue_growth - 0.02, -0.03, 0.18),
-            "net_income_growth": clamp(income_growth - 0.03, -0.05, 0.18),
+            "net_income_growth": conservative_income_growth,
             "margin": clamp(margin - 0.015, 0.01, 0.45),
             "ebitda_margin": clamp(operating["ebitda_margin"] - 0.015, 0.01, 0.70),
             "ebit_margin": clamp(operating["ebit_margin"] - 0.015, 0.0, 0.60),
@@ -537,10 +550,12 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "discount_rate": required_return + 0.015,
             "terminal_growth": max(terminal_policy["terminal_growth_base"] - 0.01, 0.015),
             "years": years,
+            "inflation_growth_rate": inflation_growth,
+            "current_year_only_explicit_growth": bool(projection_policy.get("current_year_only_explicit_growth", True)),
         },
         "base": {
             "revenue_growth": clamp(revenue_growth, -0.01, 0.22),
-            "net_income_growth": clamp(income_growth, -0.02, 0.22),
+            "net_income_growth": base_income_growth,
             "margin": clamp(margin, 0.01, 0.50),
             "ebitda_margin": clamp(operating["ebitda_margin"], 0.01, 0.70),
             "ebit_margin": clamp(operating["ebit_margin"], 0.0, 0.60),
@@ -548,10 +563,12 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "discount_rate": required_return,
             "terminal_growth": terminal_policy["terminal_growth_base"],
             "years": years,
+            "inflation_growth_rate": inflation_growth,
+            "current_year_only_explicit_growth": bool(projection_policy.get("current_year_only_explicit_growth", True)),
         },
         "optimistic": {
             "revenue_growth": clamp(revenue_growth + 0.02, 0.0, 0.28),
-            "net_income_growth": clamp(income_growth + 0.02, 0.0, 0.28),
+            "net_income_growth": optimistic_income_growth,
             "margin": clamp(margin + 0.015, 0.01, 0.55),
             "ebitda_margin": clamp(operating["ebitda_margin"] + 0.015, 0.01, 0.70),
             "ebit_margin": clamp(operating["ebit_margin"] + 0.015, 0.0, 0.60),
@@ -559,6 +576,8 @@ def build_scenarios(data: dict[str, Any], indicators: dict[str, Any]) -> dict[st
             "discount_rate": max(required_return - 0.01, 0.08),
             "terminal_growth": min(terminal_policy["terminal_growth_base"] + 0.01, 0.05),
             "years": years,
+            "inflation_growth_rate": inflation_growth,
+            "current_year_only_explicit_growth": bool(projection_policy.get("current_year_only_explicit_growth", True)),
         },
     }
 
@@ -584,9 +603,27 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
     capex_ratio = safe_div(base_row.get("capex", 0), base_row.get("revenue")) or 0
     wc_ratio = safe_div(base_row.get("working_capital_change", 0), base_row.get("revenue")) or 0
     tax_rate = base_row.get("tax_rate", 0.34)
+    projection_overrides = scenario.get("projection_overrides", {}) or {}
+    year1_net_income = projection_overrides.get("current_year_net_income")
+    year1_fcf = projection_overrides.get("current_year_free_cash_flow")
+    year1_revenue = projection_overrides.get("current_year_revenue")
+    inflation_growth = float(scenario.get("inflation_growth_rate", 0.05))
+    current_year_only_explicit_growth = bool(scenario.get("current_year_only_explicit_growth", True))
+    previous_net_income = base_row.get("net_income_adjusted", base_row.get("net_income", 0))
+    previous_fcfe = base_row.get("free_cash_flow_adjusted", base_row.get("free_cash_flow", 0))
     for offset in range(1, scenario["years"] + 1):
-        revenue *= 1 + scenario["revenue_growth"]
-        net_income = revenue * scenario["margin"]
+        if offset == 1 and year1_revenue is not None:
+            revenue = float(year1_revenue)
+        elif offset > 1 and current_year_only_explicit_growth:
+            revenue *= 1 + inflation_growth
+        else:
+            revenue *= 1 + scenario["revenue_growth"]
+        if offset == 1 and year1_net_income is not None:
+            net_income = float(year1_net_income)
+        elif offset > 1 and current_year_only_explicit_growth:
+            net_income = previous_net_income * (1 + inflation_growth)
+        else:
+            net_income = revenue * scenario["margin"]
         ebitda_margin = scenario.get("ebitda_margin")
         ebit_margin = scenario.get("ebit_margin")
         if ebitda_margin is None:
@@ -599,7 +636,12 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
         da = revenue * da_ratio
         capex = revenue * capex_ratio
         wc_change = revenue * wc_ratio
-        fcfe = net_income + da - capex - wc_change + base_row.get("net_debt_issuance", 0)
+        if offset == 1 and year1_fcf is not None:
+            fcfe = float(year1_fcf)
+        elif offset > 1 and current_year_only_explicit_growth:
+            fcfe = previous_fcfe * (1 + inflation_growth)
+        else:
+            fcfe = net_income + da - capex - wc_change + base_row.get("net_debt_issuance", 0)
         fcff = ebit * (1 - tax_rate) + da - capex - wc_change
         equity = max(equity + net_income - dividends, 1)
         net_debt = max(net_debt * 0.99, 0)
@@ -625,6 +667,8 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
             "roic": safe_div(ebit * (1 - tax_rate), equity + net_debt),
             "shares_outstanding": shares,
         })
+        previous_net_income = net_income
+        previous_fcfe = fcfe
     return rows
 
 
@@ -821,6 +865,12 @@ def holding_methods_available(data: dict[str, Any]) -> bool:
     return bool(data.get("sotp_parts") or data.get("asset_values"))
 
 
+def net_income_anchor_price(sector: str, residual_price: float | None, graham: float | None, latest_ind: dict[str, Any], method_map: dict[str, float | None]) -> float | None:
+    if sector in ("banks", "insurance"):
+        return residual_price or latest_ind.get("vpa") or graham
+    return graham or method_map.get("multiples") or latest_ind.get("p_l")
+
+
 def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     data = normalize_financials(data)
     indicators = calculate_indicators(data)
@@ -830,14 +880,23 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     current_price = data.get("market_data", {}).get("current_price", 0)
     shares = last.get("shares_outstanding", 1)
     sector = sector_key(data.get("company", {}))
+    company_size = infer_company_size_segment(data)
+    market_cap = infer_market_cap(data)
+    investment_horizon_years = resolve_investment_horizon_years(data)
+    data["investment_horizon_years"] = investment_horizon_years
     discount_policy = discount_rate_policy(data, sector, indicators)
     data["required_return"] = discount_policy["ke_used"]
     required_return = discount_policy["ke_used"]
     scenarios = build_scenarios(data, indicators)
+    projection_overrides = data.get("projection_overrides", {}) or {}
+    for scenario in scenarios.values():
+        scenario["projection_overrides"] = projection_overrides
     risk_policy = risk_adjustments(data, indicators)
     dynamic_mos = risk_policy["final_margin"]
     requested_mos = data.get("margin_of_safety", 0.20)
     div_policy = indicators.get("dividends", {}).get("policy", {})
+    payout_stats = payout_profile(financials)
+    lynch_expected_growth = peter_lynch_expected_growth_rate(indicators["latest"].get("roe"), payout_stats.get("reference"))
     safe_dividend = div_policy.get("safe_dividend_per_share", 0.0)
     graham = None
     if (latest_ind.get("lpa") or 0) > 0 and (latest_ind.get("vpa") or 0) > 0:
@@ -898,13 +957,36 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "fair_value": fair,
         }
     fair_base = fair_values["base"]
+    net_income_projection_anchor = net_income_anchor_price(
+        sector,
+        scenario_results["base"]["residual_income_price"],
+        graham,
+        latest_ind,
+        scenario_method_maps["base"],
+    ) or fair_base
     projected_ceiling_prices = calculate_projected_ceiling_prices(
         scenario_results["conservative"]["fair_value"],
         scenarios["conservative"]["net_income_growth"],
         scenarios["conservative"]["discount_rate"],
         requested_mos,
-        data.get("investment_horizon_years", 5),
+        investment_horizon_years,
     )
+    projected_ceiling_by_basis = {
+        "net_income": calculate_projected_ceiling_prices(
+            net_income_projection_anchor,
+            scenarios["base"]["net_income_growth"],
+            scenarios["base"]["discount_rate"],
+            requested_mos,
+            investment_horizon_years,
+        ),
+        "free_cash_flow": calculate_projected_ceiling_prices(
+            scenario_results["base"]["dcf_fcfe_price"] or fair_base,
+            scenarios["base"]["inflation_growth_rate"],
+            scenarios["base"]["discount_rate"],
+            requested_mos,
+            investment_horizon_years,
+        ),
+    }
     ceiling_prices = build_ceiling_prices(
         data,
         sector,
@@ -941,6 +1023,13 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         "risk_adjusted_ceiling_price": risk_adjusted_ceiling,
         "projected_ceiling_price": projected_ceiling,
         "projected_ceiling_prices": projected_ceiling_prices,
+        "projected_ceiling_by_basis": {
+            key: {
+                "years": rows,
+                "final_year": rows[-1] if rows else None,
+            }
+            for key, rows in projected_ceiling_by_basis.items()
+        },
         "ceiling_prices": ceiling_prices,
         "margin_of_safety": safe_div(fair_base - current_price, fair_base) or 0.0,
         "required_margin_of_safety": dynamic_mos,
@@ -956,6 +1045,8 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "skill_version": SKILL_VERSION,
             "engine_version": CALCULATION_ENGINE_VERSION,
             "sector_key": sector,
+            "company_size_segment": company_size,
+            "inferred_market_cap": market_cap,
             "sector_weights": sector_method_weights(sector),
             "required_return": required_return,
             "discount_rate_policy": discount_policy,
@@ -963,6 +1054,13 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "risk_adjustments": risk_policy,
             "base_margin_of_safety": requested_mos,
             "risk_adjusted_margin_of_safety": dynamic_mos,
+            "investment_horizon_years": investment_horizon_years,
+            "projection_policy": {
+                "company_size_segment": company_size,
+                "current_year_only_explicit_growth": scenarios["base"].get("current_year_only_explicit_growth"),
+                "inflation_growth_rate": scenarios["base"].get("inflation_growth_rate"),
+                "peter_lynch_growth_cap": lynch_expected_growth,
+            },
         },
         "company": data.get("company", {}),
         "sources": data.get("sources", []),
@@ -976,11 +1074,25 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "dividend_policy": div_policy,
             "residual_income": residual_income,
             "sector": sector,
+            "payout_profile": payout_stats,
+            "projected_roe": scenario_results["base"]["projections"][0].get("roe") if scenario_results["base"]["projections"] else None,
+            "projected_roe_year_final": scenario_results["base"]["projections"][-1].get("roe") if scenario_results["base"]["projections"] else None,
+            "peter_lynch_expected_growth_rate": lynch_expected_growth,
         },
         "valuation": {
             "graham": method_record(graham, graham is not None, method_reliability("graham", data, indicators), sector_method_weights(sector).get("graham", 0), "Graham aplicavel apenas com LPA e VPA positivos", {"lpa": latest_ind.get("lpa"), "vpa": latest_ind.get("vpa")}),
             "bazin": {**method_record(bazin_value_for_fair_value(bazin), income_method_weight_value(bazin_value_for_fair_value(bazin), div_policy, sector) is not None, method_reliability("bazin", data, indicators), sector_method_weights(sector).get("bazin", 0), "Bazin entra no peso apenas se dividendos forem adequados ao setor", {"selected_yield": bazin_ceiling.get("selected_yield")}), "safe_dividend_per_share": safe_dividend, "ceiling_prices": bazin, "classic_ceiling_prices": bazin_ceiling["classic"], "policy": div_policy},
-            "peter_lynch": {"score": lynch, "applicable": p_l is not None and p_l > 0, "reliability": method_reliability("lynch", data, indicators), "weight": 0.0, "reason": "Peter Lynch e score relativo; influencia oportunidade, nao preco justo"},
+            "peter_lynch": {
+                "score": lynch,
+                "applicable": p_l is not None and p_l > 0,
+                "reliability": method_reliability("lynch", data, indicators),
+                "weight": 0.0,
+                "reason": "Peter Lynch e score relativo; influencia oportunidade, nao preco justo",
+                "expected_growth_rate": lynch_expected_growth,
+                "roe": indicators["latest"].get("roe"),
+                "retention_rate": 1 - clamp(payout_stats.get("reference") if payout_stats.get("reference") is not None else 0.35, 0.0, 1.0),
+                "payout_reference": payout_stats.get("reference"),
+            },
             "ddm": {**method_record(ddm, ddm_applicable, method_reliability("ddm", data, indicators), sector_method_weights(sector).get("ddm", 0), "DDM exige Ke > g e dividendos previsiveis", {"d1": ddm_expected_dividend, "ke": required_return, "g": scenarios["base"]["terminal_growth"], "ke_minus_g": required_return - scenarios["base"]["terminal_growth"]}), "required_return": required_return, "growth": growth, "policy": div_policy},
             "dcf_fcfe": {**method_record(scenario_results["base"]["dcf_fcfe_price"], scenario_results["base"]["dcf_fcfe_price"] is not None, method_reliability("fcfe", data, indicators), sector_method_weights(sector).get("dcf_fcfe", 0), "DCF FCFE baseado em fluxos projetados ao acionista", {"discount_rate": scenarios["base"]["discount_rate"], "terminal_growth": scenarios["base"]["terminal_growth"], "terminal_value_share": (scenario_results["base"]["dcf_fcfe_details"] or {}).get("terminal_value_share")}), "details": scenario_results["base"]["dcf_fcfe_details"]},
             "dcf_fcff": {**method_record(scenario_results["base"]["dcf_fcff_price"], scenario_results["base"]["dcf_fcff_price"] is not None, method_reliability("fcff", data, indicators), sector_method_weights(sector).get("dcf_fcff", 0), "DCF FCFF baseado em fluxo da firma menos divida liquida", {"discount_rate": scenarios["base"]["discount_rate"], "terminal_growth": scenarios["base"]["terminal_growth"], "terminal_value_share": (scenario_results["base"]["dcf_fcff_details"] or {}).get("terminal_value_share")}), "details": scenario_results["base"]["dcf_fcff_details"]},
@@ -1662,3 +1774,76 @@ def infer_shares_from_market(market_data: dict[str, Any], financials: list[dict[
     if financials:
         return financials[-1].get("shares_outstanding") if financials[-1].get("shares_outstanding", 0) > 1 else None
     return None
+
+
+def infer_market_cap(data: dict[str, Any]) -> float | None:
+    market_data = data.get("market_data", {}) or {}
+    market_cap = market_data.get("market_cap")
+    if market_cap:
+        return float(market_cap)
+    financials = order_years(data.get("financials", []))
+    if not financials:
+        return None
+    current_price = market_data.get("current_price")
+    shares = financials[-1].get("shares_outstanding")
+    if current_price and shares:
+        return float(current_price) * float(shares)
+    return None
+
+
+def infer_company_size_segment(data: dict[str, Any]) -> str:
+    policy = data.get("projection_policy", {}) or {}
+    explicit = policy.get("company_size") or data.get("company", {}).get("size_segment")
+    if explicit in ("large_cap", "small_cap"):
+        return explicit
+    market_cap = infer_market_cap(data)
+    threshold = float(policy.get("large_cap_threshold", 30_000_000_000))
+    if market_cap is not None and market_cap >= threshold:
+        return "large_cap"
+    return "small_cap"
+
+
+def resolve_investment_horizon_years(data: dict[str, Any]) -> int:
+    explicit = data.get("investment_horizon_years")
+    if explicit not in (None, "", 0, "auto"):
+        return max(int(explicit), 1)
+    policy = data.get("projection_policy", {}) or {}
+    company_size = infer_company_size_segment(data)
+    if company_size == "large_cap":
+        return int(policy.get("large_cap_horizon_years", 3))
+    return int(policy.get("small_cap_horizon_years", 5))
+
+
+def payout_average(financials: list[dict[str, Any]], lookback: int) -> float | None:
+    rows = []
+    for row in financials:
+        net_income = row.get("net_income_adjusted", row.get("net_income"))
+        dividends = row.get("dividends_recurring", row.get("dividends_paid", 0))
+        if net_income and net_income > 0:
+            rows.append(dividends / net_income)
+    if not rows:
+        return None
+    return average(rows[-lookback:])
+
+
+def payout_profile(financials: list[dict[str, Any]]) -> dict[str, Any]:
+    avg_5y = payout_average(financials, 5)
+    avg_10y = payout_average(financials, 10)
+    reference = avg_5y if avg_5y is not None else avg_10y
+    return {
+        "average_5y": avg_5y,
+        "average_10y": avg_10y,
+        "reference": reference,
+        "years_available": len([row for row in financials if row.get("net_income_adjusted", row.get("net_income", 0)) > 0]),
+    }
+
+
+def latest_roe(indicators: dict[str, Any]) -> float | None:
+    return indicators.get("latest", {}).get("roe")
+
+
+def peter_lynch_expected_growth_rate(roe: float | None, payout_reference: float | None) -> float | None:
+    if roe is None:
+        return None
+    retention = 1 - clamp(payout_reference if payout_reference is not None else 0.35, 0.0, 1.0)
+    return max(roe * retention, 0.0)
