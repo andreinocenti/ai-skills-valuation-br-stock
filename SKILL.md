@@ -37,16 +37,28 @@ Execute nesta ordem:
 8. Gere preco justo, preco teto atual, preco teto projetivo, sensibilidade e veredito.
 9. Entregue Markdown e JSON estruturado.
 
+Para uso em CLIs de IA como Codex:
+
+- trate o output JSON como artefato primario para validacao e regressao
+- quando o usuario fixar cotacao, lucro projetado, FCL projetado ou margem, preserve esses overrides na analise
+- prefira testes deterministas com fixtures locais para medir qualidade metodologica sem depender da rede
+
 ## Default Assumptions
 
 Se o usuario nao informar premissas, assuma:
 
-- horizonte de projecao: 5 anos
+- horizonte de projecao: automatico por porte
+  - `large_cap`: 3 anos
+  - `small_cap`: 5 anos
 - required return: `0.12`
 - margem de seguranca minima: `0.20`
 - yields Bazin: `0.06`, `0.08`, `0.10`, `0.12`
 - cenarios: conservador, base e otimista
 - crescimento terminal: conservador e inferior ao crescimento nominal agressivo de longo prazo
+- crescimento de lucro e FCL:
+  - projete o ano corrente com taxa conservadora ou com override informado
+  - do ano 2 em diante, use apenas inflacao de `5%` por padrao
+- taxa esperada de crescimento por Peter Lynch: `ROE * (1 - payout)`
 
 Revise defaults usando [references/assumptions_policy.md](references/assumptions_policy.md) e [references/sector_rules.md](references/sector_rules.md).
 
@@ -95,6 +107,7 @@ Adicione quando aplicavel:
 - lucro residual para bancos, seguradoras e financeiras
 - SOTP para holdings e conglomerados
 - NAV ou regras setoriais especificas
+- FCL como ancora principal para empresas intensivas em capital e com geracao de caixa mais informativa que o lucro contabil, como papel e celulose, utilities operacionais e negocios industriais/regulados
 
 Consulte [references/valuation_methods.md](references/valuation_methods.md) e [references/formulas.md](references/formulas.md).
 
@@ -107,6 +120,8 @@ Antes de concluir:
 - liste dados faltantes e inferencias
 - explique premissas por ano
 - mostre riscos que alteram desconto, crescimento ou payout
+- mostre payout medio de 5 e 10 anos quando houver historico suficiente
+- mostre ROE atual, ROE projetado e crescimento esperado por Peter Lynch
 - nao esconda conflito entre metodos
 
 Se os dados forem insuficientes, entregue analise parcial e diga explicitamente o que faltou.
@@ -176,6 +191,20 @@ Quando o usuario informar apenas um ticker:
    - `cache/` para documentos CVM/B3 baixados pela pipeline
 3. Se `ok` for `true`, entregue o `report.markdown` e destaque as fontes/limitacoes.
 4. Se `ok` for `false`, entregue o dataset parcial, explique quais fontes falharam e solicite os dados faltantes.
+
+Quando o usuario informar um caso de teste com premissas fechadas:
+
+1. monte um fixture local com a cotacao fixada
+2. aplique `projection_policy` e `projection_overrides` no input
+3. valide:
+   - setor escolhido
+   - porte inferido (`large_cap` ou `small_cap`)
+   - horizonte automatico
+   - payout medio 5y e 10y
+   - ROE projetado
+   - crescimento por Peter Lynch
+   - preco teto base
+   - preco teto projetivo por lucro e por FCL quando ambos fizerem sentido
 
 Politica de reutilizacao:
 
