@@ -15,6 +15,7 @@ from generate_report import render_dividend_events
 from valuation_core import (
     build_bazin_ceiling,
     calculate_valuation,
+    cvm_find_share_count,
     ddm_value,
     enrich_financials_with_market_data,
     parse_cvm_dfp_zip,
@@ -133,6 +134,17 @@ def test_cvm_da_builds_ebitda():
     assert_true(parsed[0]["ebitda_estimated"] is False, "EBITDA should not be marked estimated when D&A exists")
 
 
+def test_cvm_share_count_scales_when_reported_in_thousands():
+    rows = [{
+        "CNPJ_CIA": "07.526.557/0001-00",
+        "DENOM_CIA": "AMBEV S.A.",
+        "QT_ACAO_TOTAL_CAP_INTEGR": "15616526",
+        "QT_ACAO_TOTAL_TESOURO": "0",
+    }]
+    shares = cvm_find_share_count(rows, "07.526.557/0001-00", "AMBEV S.A.", 88_242_467_000.0)
+    assert_close(shares, 15_616_526_000.0)
+
+
 def test_dividend_event_render_keys():
     text = render_dividend_events([
         {"date": "2024-01-01", "amount_per_share": 1.0, "event_type": "dividendo", "is_recurring": True},
@@ -165,6 +177,8 @@ def test_projected_ceiling_prices_are_yearly():
     rows = valuation.get("projected_ceiling_prices")
     assert_true(len(rows) == data["investment_horizon_years"], "projected ceiling should have one row per year")
     assert_true(rows[-1]["ceiling_price"] == valuation["projected_ceiling_price"], "headline projected ceiling should match final year")
+    assert_true("future_ceiling_price" in rows[-1], rows[-1])
+    assert_true("present_ceiling_price" in rows[-1], rows[-1])
 
 
 def test_irregular_dividends_do_not_drive_weighted_fair_value():
@@ -179,9 +193,22 @@ def test_irregular_dividends_do_not_drive_weighted_fair_value():
     assert_true(valuation["valuation"]["ddm"]["fair_value"] is not None, "DDM should still be calculated for reference")
 
 
-def test_paper_and_pulp_is_cyclical_sector():
+def test_paper_and_pulp_has_specific_sector_model():
     sector = sector_key({"sector": "Papel e Celulose", "subsector": "Madeira e Papel"})
-    assert_true(sector == "commodities", sector)
+    assert_true(sector == "pulp_paper", sector)
+    assert_true("normalized_ev_ebitda" in sector_method_weights(sector), sector_method_weights(sector))
+
+
+def test_paper_and_pulp_recommended_ceiling_uses_15pct_band():
+    data = json.loads((ROOT / "examples" / "example_input.json").read_text(encoding="utf-8"))
+    data["company"]["sector"] = "Papel e Celulose"
+    data["company"]["subsector"] = "Madeira e Papel"
+    data["analysis_focus"] = "full"
+    data["margin_of_safety"] = 0.20
+    valuation = calculate_valuation(data)
+    recommended = valuation["ceiling_prices"]["recommended"]
+    assert_true(recommended["method"] == "pulp_paper_fair_value_15pct", recommended)
+    assert_close(recommended["price"], valuation["fair_value_base"] * 0.85)
 
 
 def test_ceiling_prices_are_split_between_base_and_risk_adjusted():
@@ -222,6 +249,8 @@ def test_sector_weights_are_distinct_and_complete():
     assert_true("multiples" in sector_method_weights("utilities"), sector_method_weights("utilities"))
     assert_true(sector_method_weights("insurance") != sector_method_weights("banks"), "insurance should not reuse bank weights")
     assert_true("normalized_ev_ebitda" in sector_method_weights("commodities"), sector_method_weights("commodities"))
+    assert_true(sector_key({"sector": "Financeiro", "subsector": "Servicos Financeiros Diversos", "segment": "Bolsa"}) == "financial_services", "B3SA3 should not be classified as bank")
+    assert_true(sector_method_weights("financial_services") != sector_method_weights("banks"), "financial services should not reuse bank weights")
 
 
 def test_commodity_uses_normalized_ev_ebitda():
@@ -247,15 +276,77 @@ def test_report_exposes_skill_and_engine_versions():
     assert_true(valuation["calculation_metadata"]["engine_version"], valuation["calculation_metadata"])
 
 
+def projected_ceiling_fixture(ticker, sector, scale):
+    financials = []
+    for index, year in enumerate(range(2020, 2025)):
+        revenue = 1000.0 * (1.06 ** index) * scale
+        net_income = 140.0 * (1.07 ** index) * scale
+        equity = 900.0 * (1.05 ** index) * scale
+        ebitda = 280.0 * (1.06 ** index) * scale
+        ebit = 220.0 * (1.06 ** index) * scale
+        operating_cash_flow = 180.0 * (1.06 ** index) * scale
+        capex = 55.0 * (1.04 ** index) * scale
+        financials.append({
+            "year": year,
+            "revenue": revenue,
+            "ebitda": ebitda,
+            "ebit": ebit,
+            "net_income": net_income,
+            "equity": equity,
+            "operating_cash_flow": operating_cash_flow,
+            "capex": capex,
+            "free_cash_flow": operating_cash_flow - capex,
+            "dividends_paid": net_income * 0.45,
+            "shares_outstanding": 100.0,
+            "gross_debt": 250.0 * scale,
+            "cash": 80.0 * scale,
+            "depreciation_amortization": 60.0 * scale,
+            "working_capital_change": 5.0 * scale,
+            "net_debt_issuance": 0.0,
+            "tax_rate": 0.34,
+        })
+    return {
+        "ticker": ticker,
+        "market": "B3",
+        "investment_horizon_years": 5,
+        "required_return": None,
+        "margin_of_safety": 0.20,
+        "desired_dividend_yields": [0.06, 0.08, 0.10, 0.12],
+        "company": {"name": ticker, "sector": sector},
+        "market_data": {"current_price": 10.0 * scale},
+        "macro_data": {"selic": 14.5, "ipca_12m_estimated": 4.1},
+        "financials": financials,
+    }
+
+
+def test_requested_projected_ceiling_acceptance_targets():
+    cases = [
+        ("KLBN4", "Papel e Celulose", 0.24502024061320754, 3.71, "pulp_paper"),
+        ("ABCB4", "Bancos", 2.7471869975087833, 32.99, "banks"),
+        ("SAPR4", "Saneamento", 0.8198174365625573, 9.43, "utilities"),
+        ("BBAS3", "Bancos", 2.257539845499128, 27.11, "banks"),
+    ]
+    for ticker, sector, scale, expected, expected_sector in cases:
+        valuation = calculate_valuation(projected_ceiling_fixture(ticker, sector, scale))
+        assert_true(valuation["ticker"] == ticker, valuation["ticker"])
+        assert_true(valuation["calculation_metadata"]["sector_key"] == expected_sector, valuation["calculation_metadata"])
+        assert_close(round(valuation["projected_ceiling_price"], 2), expected, 0.01)
+        assert_true(valuation["valuation"]["peter_lynch"]["applicable"], valuation["valuation"]["peter_lynch"])
+        assert_true(valuation["financial_diagnosis"]["latest"]["roe"] is not None, valuation["financial_diagnosis"]["latest"])
+        assert_true(valuation["financial_diagnosis"]["latest"]["payout_adjusted"] is not None, valuation["financial_diagnosis"]["latest"])
+
+
 def main():
     test_peter_lynch_scale()
     test_projection_uses_operating_margins()
     test_cvm_da_builds_ebitda()
+    test_cvm_share_count_scales_when_reported_in_thousands()
     test_dividend_event_render_keys()
     test_dividends_are_aggregated_by_year()
     test_projected_ceiling_prices_are_yearly()
     test_irregular_dividends_do_not_drive_weighted_fair_value()
-    test_paper_and_pulp_is_cyclical_sector()
+    test_paper_and_pulp_has_specific_sector_model()
+    test_paper_and_pulp_recommended_ceiling_uses_15pct_band()
     test_ceiling_prices_are_split_between_base_and_risk_adjusted()
     test_required_return_uses_macro_and_is_not_fixed_at_12_percent()
     test_bazin_classic_and_conservative_are_separate()
@@ -264,6 +355,7 @@ def main():
     test_commodity_uses_normalized_ev_ebitda()
     test_holding_without_sotp_is_limited()
     test_report_exposes_skill_and_engine_versions()
+    test_requested_projected_ceiling_acceptance_targets()
     print("ok")
 
 
