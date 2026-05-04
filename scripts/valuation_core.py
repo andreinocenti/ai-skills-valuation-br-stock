@@ -597,6 +597,7 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
     rows = []
     revenue = base_row.get("revenue", 0)
     equity = base_row.get("equity", 0)
+    equity_valid = equity is not None and equity > 0
     shares = base_row.get("shares_outstanding", 1)
     net_debt = base_row.get("net_debt", base_row.get("gross_debt", 0) - base_row.get("cash", 0))
     da_ratio = safe_div(base_row.get("depreciation_amortization", 0), base_row.get("revenue")) or 0
@@ -643,7 +644,8 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
         else:
             fcfe = net_income + da - capex - wc_change + base_row.get("net_debt_issuance", 0)
         fcff = ebit * (1 - tax_rate) + da - capex - wc_change
-        equity = max(equity + net_income - dividends, 1)
+        if equity_valid:
+            equity = max(equity + net_income - dividends, 1)
         net_debt = max(net_debt * 0.99, 0)
         rows.append({
             "year_offset": offset,
@@ -663,8 +665,8 @@ def project_years(base_row: dict[str, Any], scenario: dict[str, Any]) -> list[di
             "fcff": fcff,
             "net_debt": net_debt,
             "net_debt_ebitda": safe_div(net_debt, ebitda),
-            "roe": safe_div(net_income, equity),
-            "roic": safe_div(ebit * (1 - tax_rate), equity + net_debt),
+            "roe": safe_div(net_income, equity) if equity_valid else None,
+            "roic": safe_div(ebit * (1 - tax_rate), equity + net_debt) if equity_valid else None,
             "shares_outstanding": shares,
         })
         previous_net_income = net_income
@@ -702,7 +704,13 @@ def method_reliability(method: str, data: dict[str, Any], indicators: dict[str, 
         return "not_applicable"
     if method == "ev_ebitda" and sector in ("banks", "insurance"):
         return "low"
-    if method in ("residual_income", "p_vp") and sector == "banks":
+    if method == "residual_income" and sector == "banks":
+        if (latest_ind.get("vpa") or 0) <= 0 or (latest_ind.get("roe") or 0) <= 0:
+            return "not_applicable"
+        return "high"
+    if method == "p_vp" and sector == "banks":
+        if (latest_ind.get("vpa") or 0) <= 0 or (latest_ind.get("roe") or 0) <= 0:
+            return "not_applicable"
         return "high"
     if method in ("p_vp", "ddm") and sector == "insurance":
         return "high"
@@ -736,7 +744,7 @@ def sector_method_weights(sector: str) -> dict[str, float]:
 
 
 def weighted_fair_value(method_values: dict[str, float | None], weights: dict[str, float]) -> float:
-    available = {key: value for key, value in method_values.items() if value is not None}
+    available = {key: value for key, value in method_values.items() if value is not None and value > 0}
     total_weight = sum(weight for key, weight in weights.items() if key in available)
     if not available:
         return 0.0
@@ -747,6 +755,23 @@ def weighted_fair_value(method_values: dict[str, float | None], weights: dict[st
 
 def bazin_value_for_fair_value(bazin: dict[str, float]) -> float | None:
     return bazin.get("0.08") or bazin.get("0.1") or average(list(bazin.values()))
+
+
+def justified_p_vp_fair_value(last: dict[str, Any], required_return: float, growth: float, shares: float) -> float | None:
+    equity = last.get("equity", 0)
+    net_income = last.get("net_income_adjusted", last.get("net_income", 0))
+    if shares <= 0 or equity <= 0 or required_return <= growth:
+        return None
+    roe = safe_div(net_income, equity)
+    if roe is None or roe <= 0:
+        return None
+    justified_pvp = (roe - growth) / (required_return - growth)
+    if justified_pvp <= 0:
+        return None
+    vpa = equity / shares
+    if vpa <= 0:
+        return None
+    return vpa * justified_pvp
 
 
 def income_method_weight_value(value: float | None, policy: dict[str, Any], sector: str) -> float | None:
@@ -867,7 +892,7 @@ def holding_methods_available(data: dict[str, Any]) -> bool:
 
 def net_income_anchor_price(sector: str, residual_price: float | None, graham: float | None, latest_ind: dict[str, Any], method_map: dict[str, float | None]) -> float | None:
     if sector in ("banks", "insurance"):
-        return residual_price or latest_ind.get("vpa") or graham
+        return residual_price or method_map.get("p_vp") or latest_ind.get("vpa") or graham
     return graham or method_map.get("multiples") or latest_ind.get("p_l")
 
 
@@ -911,6 +936,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     ddm_expected_dividend = safe_dividend * (1 + growth)
     ddm = ddm_value(ddm_expected_dividend, required_return, scenarios["base"]["terminal_growth"])
     ddm_applicable = ddm is not None and div_policy.get("suitable_for_bazin_ddm_weight", False)
+    justified_pvp = justified_p_vp_fair_value(last, required_return, growth, shares)
     scenario_results = {}
     fair_values = {}
     scenario_method_maps = {}
@@ -930,7 +956,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "dcf_fcfe": fcfe_price,
             "dcf_fcff": fcff_price,
             "residual_income": residual_price,
-            "p_vp": latest_ind.get("vpa"),
+            "p_vp": justified_pvp,
             "multiples": multiple_implied_value(data, latest_ind),
             "normalized_ev_ebitda": normalized_ev_ebitda_value(data, shares) if sector in ("commodities", "pulp_paper") else None,
             "sotp": safe_div(sum_sotp(data), shares) if sum_sotp(data) else None,
@@ -938,9 +964,9 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         }
         method_values = list(method_map.values())
         if sector == "banks":
-            method_values = [graham, ddm, method_map["residual_income"], latest_ind.get("vpa")]
+            method_values = [graham, ddm, method_map["residual_income"], justified_pvp]
         if sector == "insurance":
-            method_values = [graham, ddm, method_map["residual_income"], latest_ind.get("vpa"), method_map["multiples"]]
+            method_values = [graham, ddm, method_map["residual_income"], justified_pvp, method_map["multiples"]]
         if sector == "holding" and not holding_methods_available(data):
             method_values = [value for key, value in method_map.items() if key not in ("sotp", "nav")]
         fair = weighted_fair_value(method_map, sector_method_weights(sector)) or average(method_values) or 0.0
@@ -1002,6 +1028,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     base_ceiling = ceiling_prices["intrinsic_margin"]["ceiling_price"]
     risk_adjusted_ceiling = ceiling_prices["risk_adjusted"]["ceiling_price"]
     projected_ceiling = ceiling_prices["projected"]["year_5"]["ceiling_price"] if ceiling_prices["projected"]["year_5"] else None
+    projected_future_ceiling = ceiling_prices["projected"]["year_5"]["future_ceiling_price"] if ceiling_prices["projected"]["year_5"] else None
     residual_income = last.get("net_income_adjusted", last.get("net_income", 0)) - required_return * last.get("equity", 0)
     residual_value = scenario_results["base"]["residual_income_price"]
     multiples = compare_peers(data, latest_ind)
@@ -1022,6 +1049,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         "base_ceiling_price": base_ceiling,
         "risk_adjusted_ceiling_price": risk_adjusted_ceiling,
         "projected_ceiling_price": projected_ceiling,
+        "projected_future_ceiling_price": projected_future_ceiling,
         "projected_ceiling_prices": projected_ceiling_prices,
         "projected_ceiling_by_basis": {
             key: {
@@ -1100,6 +1128,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "normalized_ev_ebitda": method_record(normalized_ev_ebitda_value(data, shares), normalized_ev_ebitda_value(data, shares) is not None and sector in ("commodities", "pulp_paper"), "high" if sector in ("commodities", "pulp_paper") else "conditional", sector_method_weights(sector).get("normalized_ev_ebitda", 0), "EV/EBITDA normalizado e metodo relevante para setores ciclicos", {}),
             "reverse_dcf": {"implied_growth": reverse_growth},
             "residual_income": {**method_record(residual_value, residual_value is not None, method_reliability("residual_income", data, indicators), sector_method_weights(sector).get("residual_income", 0), "Lucro residual e central para bancos/seguradoras", {"residual_income": residual_income}), "value": residual_income},
+            "p_vp_justified": method_record(justified_pvp, justified_pvp is not None, method_reliability("p_vp", data, indicators), sector_method_weights(sector).get("p_vp", 0), "P/VP justificado por ROE, crescimento e custo de capital", {"vpa": latest_ind.get("vpa"), "roe": latest_ind.get("roe"), "ke": required_return, "g": growth}),
             "sotp": method_record(sum_sotp(data), sum_sotp(data) is not None, method_reliability("sotp", data, indicators), sector_method_weights(sector).get("sotp", 0), "SOTP e principal para holdings quando partes sao informadas"),
             "nav": method_record(net_asset_value(data, shares), net_asset_value(data, shares) is not None, method_reliability("nav", data, indicators), sector_method_weights(sector).get("nav", 0), "NAV e principal para holdings quando ativos sao informados"),
             "sector_weights": sector_method_weights(sector),
@@ -1122,7 +1151,7 @@ def residual_income_value(last: dict[str, Any], required_return: float, growth: 
     equity = last.get("equity", 0)
     net_income = last.get("net_income_adjusted", last.get("net_income", 0))
     residual = net_income - required_return * equity
-    if shares <= 0 or required_return <= growth:
+    if shares <= 0 or required_return <= growth or equity <= 0:
         return None
     return (equity + residual * (1 + growth) / (required_return - growth)) / shares
 
@@ -1176,7 +1205,7 @@ def calculate_projected_ceiling_prices(fair_value: float, growth: float, discoun
             "margin_of_safety": margin_of_safety,
             "present_ceiling_price": present_ceiling_price,
             "future_ceiling_price": future_ceiling_price,
-            "ceiling_price": future_ceiling_price,
+            "ceiling_price": present_ceiling_price,
         })
     return rows
 
@@ -1261,7 +1290,7 @@ def build_ceiling_prices(
     }
     candidates = []
     def add_candidate(method: str, price: float | None, reason: str):
-        if price is not None:
+        if price is not None and price > 0:
             candidates.append({"method": method, "price": price, "reason": reason})
 
     projected_price = projected["year_5"]["ceiling_price"] if projected["year_5"] else None
@@ -1271,12 +1300,16 @@ def build_ceiling_prices(
         add_candidate("projected", projected_price, "teto projetivo descontado")
     elif sector == "banks":
         add_candidate("residual_income", method_map.get("residual_income"), "banco prioriza lucro residual")
-        add_candidate("p_vp", method_map.get("p_vp"), "banco prioriza P/VP ajustado por ROE")
+        add_candidate("p_vp_justified", method_map.get("p_vp"), "banco prioriza P/VP justificado por ROE, crescimento e custo de capital")
         add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem")
     elif sector == "commodities":
         add_candidate("normalized_ev_ebitda", method_map.get("normalized_ev_ebitda"), "commodity prioriza EV/EBITDA normalizado")
         add_candidate("dcf_fcff", method_map.get("dcf_fcff"), "commodity prioriza DCF conservador de ciclo")
         add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "setor ciclico usa margem ajustada ao risco")
+    elif sector == "utilities":
+        add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "utility regulada prioriza valor justo com margem")
+        add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "referencia conservadora ajustada ao risco")
+        add_candidate("projected", projected_price, "teto projetivo descontado para monitoramento, nao para entrada principal")
     elif sector == "pulp_paper":
         operational_values = [
             method_map.get("normalized_ev_ebitda"),
@@ -1296,7 +1329,12 @@ def build_ceiling_prices(
         add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem")
         add_candidate("projected", projected_price, "teto projetivo descontado")
 
-    if sector == "pulp_paper":
+    if sector == "banks":
+        recommended = next((item for item in candidates if item["method"] == "residual_income"), None)
+        recommended = recommended or next((item for item in candidates if item["method"] == "p_vp_justified"), None)
+    elif sector == "utilities":
+        recommended = next((item for item in candidates if item["method"] == "intrinsic_margin"), None)
+    elif sector == "pulp_paper":
         recommended = next((item for item in candidates if item["method"] == "pulp_paper_fair_value_15pct"), None)
     else:
         recommended = None
@@ -1443,10 +1481,14 @@ def risk(name: str, probability: str, impact: str, effect: str) -> dict[str, str
 
 def build_limitations(data: dict[str, Any], indicators: dict[str, Any]) -> list[str]:
     limitations = list(data.get("limitations", []))
+    sector = sector_key(data.get("company", {}))
+    latest_ind = indicators.get("latest", {})
     if not data.get("peers") and not data.get("peer_group"):
         limitations.append("Comparacao com pares depende de dados de pares no input ou coleta setorial.")
-    if sector_key(data.get("company", {})) == "holding" and not holding_methods_available(data):
+    if sector == "holding" and not holding_methods_available(data):
         limitations.append("Holding sem SOTP/NAV estruturado; valuation por metodos genericos tem baixa confiabilidade.")
+    if sector in ("banks", "insurance") and (latest_ind.get("vpa") or 0) <= 0:
+        limitations.append("Patrimonio por acao invalido no payload; lucro residual, P/VP e ROE projetado foram desabilitados.")
     if any(row.get("ebitda_estimated") for row in data.get("financials", [])):
         limitations.append("EBITDA estimado em pelo menos um periodo por ausencia de D&A estruturado na DFC.")
     if not any(source.get("type") == SOURCE_OFFICIAL for source in data.get("sources", [])):

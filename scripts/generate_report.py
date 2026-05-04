@@ -39,9 +39,16 @@ def render_projection(rows):
     ])
 
 
-def render_ttm(ttm):
+def render_ttm(ttm, sector=None):
     if not ttm:
         return "- TTM nao calculado"
+    if sector in ("banks", "insurance"):
+        return lines([
+            f"- Periodo: {ttm.get('period', 'TTM')}",
+            f"- Receita TTM: {brl(ttm.get('revenue'))}",
+            f"- Lucro liquido TTM: {brl(ttm.get('net_income'))}",
+            f"- Dividendos TTM: {brl(ttm.get('dividends_paid'))}",
+        ])
     return lines([
         f"- Periodo: {ttm.get('period', 'TTM')}",
         f"- Receita TTM: {brl(ttm.get('revenue'))}",
@@ -49,6 +56,29 @@ def render_ttm(ttm):
         f"- Lucro liquido TTM: {brl(ttm.get('net_income'))}",
         f"- FCF TTM: {brl(ttm.get('free_cash_flow'))}",
     ])
+
+
+def render_fundamental_diagnosis(latest, sector=None):
+    rows = [
+        f"- P/L: {latest.get('p_l')}",
+        f"- P/VP: {latest.get('p_vp')}",
+        f"- ROE: {pct(latest.get('roe'))}",
+        f"- Margem liquida: {pct(latest.get('net_margin'))}",
+    ]
+    if sector not in ("banks", "insurance"):
+        rows.insert(2, f"- EV/EBITDA: {latest.get('ev_ebitda')}")
+        rows.insert(4, f"- ROIC: {pct(latest.get('roic'))}")
+    return lines(rows)
+
+
+def render_leverage(latest, sector=None):
+    rows = [
+        f"- Divida liquida/PL: {latest.get('net_debt_equity')}",
+        f"- Cobertura de juros: {latest.get('interest_coverage')}",
+    ]
+    if sector not in ("banks", "insurance"):
+        rows.insert(0, f"- Divida liquida/EBITDA: {latest.get('net_debt_ebitda')}")
+    return lines(rows)
 
 
 def render_dividend_events(events):
@@ -101,6 +131,7 @@ def render_methods(valuation):
         f"- DCF FCFF: {brl(methods['dcf_fcff'].get('fair_value'))} | perpetuidade {pct(fcff_inputs.get('terminal_value_share'))}",
         f"- EV/EBITDA normalizado: {brl(methods.get('normalized_ev_ebitda', {}).get('fair_value'))}",
         f"- Lucro residual: {brl(methods['residual_income'].get('fair_value'))}",
+        f"- P/VP justificado: {brl(methods.get('p_vp_justified', {}).get('fair_value'))}",
         f"- SOTP: {brl(methods['sotp'].get('fair_value'))}",
         f"- NAV: {brl(methods['nav'].get('fair_value'))}",
     ]
@@ -160,12 +191,13 @@ def render_projected_ceiling_prices(rows):
     if not rows:
         return "- Precos teto projetivos ano a ano nao calculados"
     return lines([
-        "- Ano {year}: valor justo futuro {future}, valor presente {present}, margem {mos}, preco teto {ceiling}".format(
+        "- Ano {year}: valor justo futuro {future}, valor presente {present}, margem {mos}, preco teto presente {ceiling}, preco teto futuro {future_ceiling}".format(
             year=row.get("year"),
             future=brl(row.get("future_fair_value")),
             present=brl(row.get("present_value")),
             mos=pct(row.get("margin_of_safety")),
-            ceiling=brl(row.get("future_ceiling_price", row.get("ceiling_price"))),
+            ceiling=brl(row.get("ceiling_price")),
+            future_ceiling=brl(row.get("future_ceiling_price")),
         )
         for row in rows
     ])
@@ -204,6 +236,7 @@ def generate_markdown(valuation, sensitivity):
     latest = valuation["financial_diagnosis"]["latest"]
     divs = valuation["financial_diagnosis"]["dividends"]
     base = valuation["scenarios"]["base"]
+    sector = valuation.get("calculation_metadata", {}).get("sector_key")
     payout_profile = valuation.get("diagnosis", {}).get("payout_profile", {})
     projection_policy = valuation.get("calculation_metadata", {}).get("projection_policy", {})
     projected_basis = valuation.get("projected_ceiling_by_basis", {})
@@ -238,15 +271,10 @@ def generate_markdown(valuation, sensitivity):
 - Ke spot: {pct(valuation.get('calculation_metadata', {}).get('discount_rate_policy', {}).get('ke_spot'))}
 
 ## 5. Diagnostico fundamentalista
-- P/L: {latest.get('p_l')}
-- P/VP: {latest.get('p_vp')}
-- EV/EBITDA: {latest.get('ev_ebitda')}
-- ROE: {pct(latest.get('roe'))}
-- ROIC: {pct(latest.get('roic'))}
-- Margem liquida: {pct(latest.get('net_margin'))}
+{render_fundamental_diagnosis(latest, sector)}
 
 ### TTM
-{render_ttm(valuation.get('ttm'))}
+{render_ttm(valuation.get('ttm'), sector)}
 
 ## 6. Qualidade do lucro
 - Score de qualidade dos dados: {valuation['data_quality']['score']}/100
@@ -269,9 +297,7 @@ def generate_markdown(valuation, sensitivity):
 {render_dividend_policy(valuation.get('diagnosis', {}).get('dividend_policy', {}))}
 
 ## 8. Endividamento
-- Divida liquida/EBITDA: {latest.get('net_debt_ebitda')}
-- Divida liquida/PL: {latest.get('net_debt_equity')}
-- Cobertura de juros: {latest.get('interest_coverage')}
+{render_leverage(latest, sector)}
 
 ## 9. Projecoes ano a ano
 - Horizonte usado: {valuation.get('calculation_metadata', {}).get('investment_horizon_years')} anos
@@ -299,6 +325,7 @@ def generate_markdown(valuation, sensitivity):
 
 ## 13. Preco teto projetivo
 - Preco teto projetivo: {brl(valuation['projected_ceiling_price'])}
+- Preco teto projetivo futuro sem desconto: {brl(valuation.get('projected_future_ceiling_price'))}
 {render_projected_ceiling_prices(valuation.get('projected_ceiling_prices', []))}
 
 ### Teto projetivo por base

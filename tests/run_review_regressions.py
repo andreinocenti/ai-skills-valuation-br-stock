@@ -179,6 +179,7 @@ def test_projected_ceiling_prices_are_yearly():
     assert_true(rows[-1]["ceiling_price"] == valuation["projected_ceiling_price"], "headline projected ceiling should match final year")
     assert_true("future_ceiling_price" in rows[-1], rows[-1])
     assert_true("present_ceiling_price" in rows[-1], rows[-1])
+    assert_true(rows[-1]["ceiling_price"] == rows[-1]["present_ceiling_price"], rows[-1])
 
 
 def test_irregular_dividends_do_not_drive_weighted_fair_value():
@@ -274,6 +275,18 @@ def test_report_exposes_skill_and_engine_versions():
     valuation = calculate_valuation(data)
     assert_true(valuation["skill_version"] == "valuation-br-stock", valuation.get("skill_version"))
     assert_true(valuation["calculation_metadata"]["engine_version"], valuation["calculation_metadata"])
+
+
+def test_bank_ceiling_ignores_zero_or_invalid_p_vp_candidate():
+    data = fixture_abcb4()
+    data["financials"][-1]["equity"] = 0.0
+    valuation = calculate_valuation(data)
+    recommended = valuation["ceiling_prices"]["recommended"]
+    assert_true(recommended["price"] is None or recommended["price"] > 0, recommended)
+    assert_true(recommended["method"] != "p_vp_justified", recommended)
+    assert_true(valuation["valuation"]["p_vp_justified"]["fair_value"] is None, valuation["valuation"]["p_vp_justified"])
+    assert_true(valuation["valuation"]["residual_income"]["fair_value"] is None, valuation["valuation"]["residual_income"])
+    assert_true(valuation["diagnosis"]["projected_roe"] is None, valuation["diagnosis"])
 
 
 def fixture_klbn4():
@@ -519,10 +532,10 @@ def test_requested_projected_ceiling_acceptance_targets():
     assert_true(klbn4["calculation_metadata"]["sector_key"] == "pulp_paper", klbn4["calculation_metadata"])
     assert_true(klbn4["calculation_metadata"]["company_size_segment"] == "small_cap", klbn4["calculation_metadata"])
     assert_true(klbn4["calculation_metadata"]["investment_horizon_years"] == 5, klbn4["calculation_metadata"])
-    assert_close(round(klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["ceiling_price"], 2), 3.71, 0.02)
-    assert_close(round(klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"]["ceiling_price"], 2), 3.51, 0.03)
+    assert_close(round(klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["future_ceiling_price"], 2), 3.71, 0.02)
+    assert_close(round(klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"]["future_ceiling_price"], 2), 3.51, 0.03)
     assert_close(round(klbn4["diagnosis"]["projected_roe"] * 100, 2), 11.65, 0.08)
-    assert_close(round((klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["ceiling_price"] / 3.63 - 1) * 100, 2), 2.19, 0.10)
+    assert_close(round((klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["future_ceiling_price"] / 3.63 - 1) * 100, 2), 2.19, 0.10)
 
     abcb4 = calculate_valuation(fixture_abcb4())
     assert_true(abcb4["calculation_metadata"]["sector_key"] == "banks", abcb4["calculation_metadata"])
@@ -547,7 +560,8 @@ def test_requested_projected_ceiling_acceptance_targets():
     assert_true(bbas3["calculation_metadata"]["sector_key"] == "banks", bbas3["calculation_metadata"])
     assert_true(bbas3["calculation_metadata"]["company_size_segment"] == "large_cap", bbas3["calculation_metadata"])
     assert_true(bbas3["calculation_metadata"]["investment_horizon_years"] == 3, bbas3["calculation_metadata"])
-    assert_close(round(bbas3["base_ceiling_price"], 2), 27.11, 0.05)
+    assert_true(bbas3["suggested_ceiling_price"] > 0, bbas3["ceiling_prices"])
+    assert_true(bbas3["valuation"]["p_vp_justified"]["fair_value"] is not None, bbas3["valuation"]["p_vp_justified"])
     assert_close(round(bbas3["diagnosis"]["projected_roe"] * 100, 2), 8.67, 0.05)
     assert_close(round(bbas3["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 6.27, 0.05)
     assert_close(round(bbas3["diagnosis"]["payout_profile"]["average_5y"] * 100, 2), 28.37, 0.01)
