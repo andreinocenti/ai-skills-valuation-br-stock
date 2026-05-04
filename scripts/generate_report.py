@@ -130,6 +130,7 @@ def render_ceiling_bridge(valuation):
     intrinsic = ceilings.get("intrinsic_margin", {})
     risk_adjusted = ceilings.get("risk_adjusted", {})
     projected = ceilings.get("projected", {}).get("year_5") or {}
+    margin_bands = ceilings.get("margin_bands", {})
     risk_policy = valuation.get("calculation_metadata", {}).get("risk_adjustments", {})
     adjustments = risk_policy.get("adjustments", [])
     rows = [
@@ -141,6 +142,9 @@ def render_ceiling_bridge(valuation):
         f"- Bazin classico selecionado: {brl(bazin.get('selected_classic_price'))}",
         f"- Bazin conservador selecionado: {brl(bazin.get('selected_price'))} no yield {pct(bazin.get('selected_yield'))}",
         f"- Teto projetivo ano 5: {brl(projected.get('ceiling_price'))}",
+        f"- Faixa teto 15%: {brl(margin_bands.get('0.15'))}",
+        f"- Faixa teto 20%: {brl(margin_bands.get('0.20'))}",
+        f"- Faixa teto 25%: {brl(margin_bands.get('0.25'))}",
         f"- Preco teto recomendado: {brl(recommended.get('price'))}",
         f"- Metodo recomendado: {recommended.get('method')}",
         f"- Motivo: {recommended.get('reason')}",
@@ -161,7 +165,7 @@ def render_projected_ceiling_prices(rows):
             future=brl(row.get("future_fair_value")),
             present=brl(row.get("present_value")),
             mos=pct(row.get("margin_of_safety")),
-            ceiling=brl(row.get("ceiling_price")),
+            ceiling=brl(row.get("future_ceiling_price", row.get("ceiling_price"))),
         )
         for row in rows
     ])
@@ -195,6 +199,9 @@ def generate_markdown(valuation, sensitivity):
 
 ## 1. Resumo executivo
 {valuation['ticker']} negocia a {brl(valuation['current_price'])}. O valor justo base estimado e {brl(valuation['fair_value_base'])}, com preco teto recomendado de {brl(valuation['suggested_ceiling_price'])}, preco teto ajustado ao risco de {brl(valuation.get('risk_adjusted_ceiling_price'))} e preco teto projetivo de {brl(valuation['projected_ceiling_price'])}. Veredito: {valuation['verdict']}. Confianca: {valuation['confidence']}.
+
+- Versao da skill: {valuation.get('skill_version', valuation.get('calculation_metadata', {}).get('skill_version', 'valuation-br-stock'))}
+- Versao do motor: {valuation.get('calculation_metadata', {}).get('engine_version', 'nao informada')}
 
 ## 2. Dados da empresa
 - Nome: {valuation['company_name']}

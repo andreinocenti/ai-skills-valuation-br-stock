@@ -62,6 +62,7 @@ KNOWN_B3_COMPANIES = {
     "CMIG3": {"name": "CEMIG", "cvm_code": "2453", "sector": "Energia eletrica", "share_class": "ON"},
     "CMIG4": {"name": "CEMIG", "cvm_code": "2453", "sector": "Energia eletrica", "share_class": "PN"},
     "BBAS3": {"name": "BANCO DO BRASIL", "cvm_code": "1023", "sector": "Bancos", "share_class": "ON"},
+    "ABCB4": {"name": "BANCO ABC BRASIL", "cvm_code": "20958", "sector": "Bancos", "share_class": "PN"},
     "VALE3": {"name": "VALE", "cvm_code": "4170", "sector": "Mineracao e commodities", "share_class": "ON"},
     "PETR3": {"name": "PETROBRAS", "cvm_code": "9512", "sector": "Petroleo e gas", "share_class": "ON"},
     "PETR4": {"name": "PETROBRAS", "cvm_code": "9512", "sector": "Petroleo e gas", "share_class": "PN"},
@@ -72,6 +73,7 @@ KNOWN_B3_COMPANIES = {
     "LREN3": {"name": "LOJAS RENNER", "cvm_code": "8133", "sector": "Varejo", "share_class": "ON"},
     "MGLU3": {"name": "MAGAZINE LUIZA", "cvm_code": "22470", "sector": "Varejo", "share_class": "ON"},
     "SAPR11": {"name": "SANEPAR", "cvm_code": "18627", "sector": "Saneamento", "share_class": "UNIT"},
+    "SAPR4": {"name": "SANEPAR", "cvm_code": "18627", "sector": "Saneamento", "share_class": "PN"},
     "SBSP3": {"name": "SABESP", "cvm_code": "14443", "sector": "Saneamento", "share_class": "ON"},
     "ITSA4": {"name": "ITAUSA", "cvm_code": "7617", "sector": "Holding", "share_class": "PN"},
     "BRAP4": {"name": "BRADESPAR", "cvm_code": "18724", "sector": "Holding", "share_class": "PN"},
@@ -421,12 +423,18 @@ def assess_data_quality(data: dict[str, Any], yearly: list[dict[str, Any]]) -> d
 
 def sector_key(company: dict[str, Any]) -> str:
     text = " ".join(str(company.get(key, "")) for key in ("sector", "subsector", "segment")).lower()
-    if any(word in text for word in ("banco", "finance", "intermediacao")):
+    if any(word in text for word in ("bolsa", "servicos financeiros diversos", "serviços financeiros diversos")):
+        return "financial_services"
+    if any(word in text for word in ("banco", "intermediacao")):
+        return "banks"
+    if "finance" in text and "banco" in text:
         return "banks"
     if any(word in text for word in ("segur", "previd")):
         return "insurance"
     if any(word in text for word in ("energia", "eletric", "utilidade", "saneamento")):
         return "utilities"
+    if any(word in text for word in ("papel", "celulose", "madeira")):
+        return "pulp_paper"
     if any(word in text for word in ("petroleo", "miner", "sider", "commodity", "papel", "celulose")):
         return "commodities"
     if any(word in text for word in ("varejo", "comercio")):
@@ -450,6 +458,11 @@ def risk_adjustments(data: dict[str, Any], indicators: dict[str, Any]) -> dict[s
         if base < sector_floor:
             adjustments.append({"name": "piso_setorial_ciclico", "impact": sector_floor - base, "reason": "setor ciclico exige margem minima maior"})
             base = sector_floor
+    if sector == "pulp_paper":
+        sector_floor = 0.20
+        if base < sector_floor:
+            adjustments.append({"name": "piso_papel_celulose", "impact": sector_floor - base, "reason": "papel e celulose exige margem por ciclo e CAPEX, mas nao commodity generica"})
+            base = sector_floor
     if sector == "holding":
         sector_floor = 0.25
         if base < sector_floor:
@@ -462,8 +475,9 @@ def risk_adjustments(data: dict[str, Any], indicators: dict[str, Any]) -> dict[s
             base = sector_floor
     latest_ind = indicators.get("latest", {})
     if (latest_ind.get("net_debt_ebitda") or 0) > 3:
-        adjustments.append({"name": "alavancagem_elevada", "impact": 0.07, "reason": "divida liquida/EBITDA acima de 3x"})
-        base += 0.07
+        leverage_impact = 0.04 if sector == "pulp_paper" else 0.07
+        adjustments.append({"name": "alavancagem_elevada", "impact": leverage_impact, "reason": "divida liquida/EBITDA acima de 3x"})
+        base += leverage_impact
     if (latest_ind.get("payout_adjusted") or 0) > 1:
         adjustments.append({"name": "payout_acima_de_100", "impact": 0.05, "reason": "dividendos acima do lucro ajustado"})
         base += 0.05
@@ -480,7 +494,7 @@ def risk_adjustments(data: dict[str, Any], indicators: dict[str, Any]) -> dict[s
 
 
 def normalize_cyclical_financials(financials: list[dict[str, Any]], sector: str) -> list[dict[str, Any]]:
-    if sector != "commodities" or len(financials) < 5:
+    if sector not in ("commodities", "pulp_paper") or len(financials) < 5:
         return financials
     margins = [safe_div(row.get("net_income_adjusted", row.get("net_income")), row.get("revenue")) for row in financials]
     normal_margin = median(margins) or average(margins) or 0
@@ -662,10 +676,14 @@ def sector_method_weights(sector: str) -> dict[str, float]:
         return {"residual_income": 0.35, "p_vp": 0.30, "ddm": 0.20, "graham": 0.15}
     if sector == "insurance":
         return {"p_vp": 0.30, "ddm": 0.25, "residual_income": 0.20, "graham": 0.15, "multiples": 0.10}
+    if sector == "financial_services":
+        return {"dcf_fcfe": 0.25, "dcf_fcff": 0.20, "graham": 0.20, "ddm": 0.15, "multiples": 0.20}
     if sector == "utilities":
         return {"ddm": 0.20, "bazin": 0.10, "dcf_fcfe": 0.25, "dcf_fcff": 0.25, "multiples": 0.10, "graham": 0.10}
     if sector == "commodities":
         return {"normalized_ev_ebitda": 0.35, "dcf_fcff": 0.30, "multiples": 0.20, "dcf_fcfe": 0.10, "graham": 0.05}
+    if sector == "pulp_paper":
+        return {"normalized_ev_ebitda": 0.30, "dcf_fcfe": 0.30, "dcf_fcff": 0.15, "graham": 0.15, "ddm": 0.05, "multiples": 0.05}
     if sector == "retail":
         return {"dcf_fcff": 0.35, "dcf_fcfe": 0.25, "multiples": 0.25, "graham": 0.15}
     if sector == "holding":
@@ -692,7 +710,7 @@ def income_method_weight_value(value: float | None, policy: dict[str, Any], sect
         return None
     if not policy.get("suitable_for_bazin_ddm_weight", False):
         return None
-    if sector == "commodities" and policy.get("income_method_reliability") != "high":
+    if sector in ("commodities", "pulp_paper") and policy.get("income_method_reliability") != "high":
         return None
     return value
 
@@ -732,7 +750,7 @@ def normalized_ev_ebitda_value(data: dict[str, Any], shares: float) -> float | N
     if not normalized_ebitda:
         return None
     sector = sector_key(data.get("company", {}))
-    default_multiple = 5.5 if sector == "commodities" else 6.5
+    default_multiple = 7.5 if sector == "pulp_paper" else 5.5 if sector == "commodities" else 6.5
     peer_multiple = average([peer.get("ev_ebitda") for peer in data.get("peers", [])])
     multiple = peer_multiple or data.get("normalized_ev_ebitda_multiple") or default_multiple
     net_debt = latest(financials).get("net_debt", latest(financials).get("gross_debt", 0) - latest(financials).get("cash", 0))
@@ -751,6 +769,7 @@ def discount_rate_policy(data: dict[str, Any], sector: str, indicators: dict[str
         "insurance": 0.005,
         "utilities": 0.005,
         "commodities": 0.02,
+        "pulp_paper": 0.01,
         "retail": 0.02,
         "holding": 0.015,
         "general": 0.01,
@@ -759,7 +778,7 @@ def discount_rate_policy(data: dict[str, Any], sector: str, indicators: dict[str
     latest_ind = indicators.get("latest", {})
     specific_premium = 0.0
     if (latest_ind.get("net_debt_ebitda") or 0) > 3:
-        specific_premium += 0.01
+        specific_premium += 0.005 if sector == "pulp_paper" else 0.01
     if indicators.get("data_quality", {}).get("confidence") in ("low", "medium_low"):
         specific_premium += 0.01
     ke_normalized = clamp(normalized_risk_free + market_premium + sector_premium + specific_premium, 0.10, 0.24)
@@ -784,7 +803,7 @@ def terminal_growth_policy(data: dict[str, Any], sector: str) -> dict[str, Any]:
     macro = data.get("macro_data", {}) or {}
     ipca_12m = macro.get("ipca_12m_estimated")
     normalized_inflation = 0.04
-    real_growth = 0.005 if sector in ("commodities", "retail") else 0.01
+    real_growth = 0.005 if sector in ("commodities", "pulp_paper", "retail") else 0.01
     if sector in ("banks", "insurance"):
         real_growth = 0.005
     g_base = min(normalized_inflation + real_growth, 0.045)
@@ -854,7 +873,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "residual_income": residual_price,
             "p_vp": latest_ind.get("vpa"),
             "multiples": multiple_implied_value(data, latest_ind),
-            "normalized_ev_ebitda": normalized_ev_ebitda_value(data, shares) if sector == "commodities" else None,
+            "normalized_ev_ebitda": normalized_ev_ebitda_value(data, shares) if sector in ("commodities", "pulp_paper") else None,
             "sotp": safe_div(sum_sotp(data), shares) if sum_sotp(data) else None,
             "nav": net_asset_value(data, shares),
         }
@@ -966,7 +985,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "dcf_fcfe": {**method_record(scenario_results["base"]["dcf_fcfe_price"], scenario_results["base"]["dcf_fcfe_price"] is not None, method_reliability("fcfe", data, indicators), sector_method_weights(sector).get("dcf_fcfe", 0), "DCF FCFE baseado em fluxos projetados ao acionista", {"discount_rate": scenarios["base"]["discount_rate"], "terminal_growth": scenarios["base"]["terminal_growth"], "terminal_value_share": (scenario_results["base"]["dcf_fcfe_details"] or {}).get("terminal_value_share")}), "details": scenario_results["base"]["dcf_fcfe_details"]},
             "dcf_fcff": {**method_record(scenario_results["base"]["dcf_fcff_price"], scenario_results["base"]["dcf_fcff_price"] is not None, method_reliability("fcff", data, indicators), sector_method_weights(sector).get("dcf_fcff", 0), "DCF FCFF baseado em fluxo da firma menos divida liquida", {"discount_rate": scenarios["base"]["discount_rate"], "terminal_growth": scenarios["base"]["terminal_growth"], "terminal_value_share": (scenario_results["base"]["dcf_fcff_details"] or {}).get("terminal_value_share")}), "details": scenario_results["base"]["dcf_fcff_details"]},
             "multiples": multiples,
-            "normalized_ev_ebitda": method_record(normalized_ev_ebitda_value(data, shares), normalized_ev_ebitda_value(data, shares) is not None and sector == "commodities", "high" if sector == "commodities" else "conditional", sector_method_weights(sector).get("normalized_ev_ebitda", 0), "EV/EBITDA normalizado e metodo principal para commodities", {}),
+            "normalized_ev_ebitda": method_record(normalized_ev_ebitda_value(data, shares), normalized_ev_ebitda_value(data, shares) is not None and sector in ("commodities", "pulp_paper"), "high" if sector in ("commodities", "pulp_paper") else "conditional", sector_method_weights(sector).get("normalized_ev_ebitda", 0), "EV/EBITDA normalizado e metodo relevante para setores ciclicos", {}),
             "reverse_dcf": {"implied_growth": reverse_growth},
             "residual_income": {**method_record(residual_value, residual_value is not None, method_reliability("residual_income", data, indicators), sector_method_weights(sector).get("residual_income", 0), "Lucro residual e central para bancos/seguradoras", {"residual_income": residual_income}), "value": residual_income},
             "sotp": method_record(sum_sotp(data), sum_sotp(data) is not None, method_reliability("sotp", data, indicators), sector_method_weights(sector).get("sotp", 0), "SOTP e principal para holdings quando partes sao informadas"),
@@ -1036,13 +1055,16 @@ def calculate_projected_ceiling_prices(fair_value: float, growth: float, discoun
     for year in range(1, int(years) + 1):
         future_fair_value = fair_value * ((1 + growth) ** year)
         present_value = future_fair_value / ((1 + discount_rate) ** year) if discount_rate > -1 else None
-        ceiling_price = present_value * (1 - margin_of_safety) if present_value is not None else None
+        present_ceiling_price = present_value * (1 - margin_of_safety) if present_value is not None else None
+        future_ceiling_price = future_fair_value * (1 - margin_of_safety)
         rows.append({
             "year": year,
             "future_fair_value": future_fair_value,
             "present_value": present_value,
             "margin_of_safety": margin_of_safety,
-            "ceiling_price": ceiling_price,
+            "present_ceiling_price": present_ceiling_price,
+            "future_ceiling_price": future_ceiling_price,
+            "ceiling_price": future_ceiling_price,
         })
     return rows
 
@@ -1115,6 +1137,12 @@ def build_ceiling_prices(
         "required_margin": risk_margin,
         "ceiling_price": fair_value * (1 - risk_margin),
     }
+    margin_bands = {
+        "0.15": fair_value * 0.85,
+        "0.20": fair_value * 0.80,
+        "0.25": fair_value * 0.75,
+        str(risk_margin): risk_adjusted["ceiling_price"],
+    }
     projected = {
         "years": projected_rows,
         "year_5": projected_rows[-1] if projected_rows else None,
@@ -1137,6 +1165,17 @@ def build_ceiling_prices(
         add_candidate("normalized_ev_ebitda", method_map.get("normalized_ev_ebitda"), "commodity prioriza EV/EBITDA normalizado")
         add_candidate("dcf_fcff", method_map.get("dcf_fcff"), "commodity prioriza DCF conservador de ciclo")
         add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "setor ciclico usa margem ajustada ao risco")
+    elif sector == "pulp_paper":
+        operational_values = [
+            method_map.get("normalized_ev_ebitda"),
+            method_map.get("dcf_fcfe"),
+            method_map.get("graham"),
+        ]
+        operational_base = median([value for value in operational_values if value is not None])
+        add_candidate("pulp_paper_fair_value_15pct", margin_bands["0.15"], "papel e celulose usa faixa base com margem de 15% quando o valor justo ja incorpora ciclo e alavancagem")
+        add_candidate("pulp_paper_operational_15pct", operational_base * 0.85 if operational_base is not None else None, "papel e celulose usa faixa operacional com margem de 15% para nao punir duas vezes ciclo e alavancagem")
+        add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem informada")
+        add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "referencia conservadora ajustada ao risco")
     elif sector == "holding":
         add_candidate("sotp", method_map.get("sotp"), "holding prioriza soma das partes")
         add_candidate("nav", method_map.get("nav"), "holding prioriza NAV")
@@ -1145,7 +1184,11 @@ def build_ceiling_prices(
         add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "teto por valor justo com margem")
         add_candidate("projected", projected_price, "teto projetivo descontado")
 
-    recommended = min(candidates, key=lambda item: item["price"]) if candidates else {
+    if sector == "pulp_paper":
+        recommended = next((item for item in candidates if item["method"] == "pulp_paper_fair_value_15pct"), None)
+    else:
+        recommended = None
+    recommended = recommended or min(candidates, key=lambda item: item["price"]) if candidates else {
         "method": "not_available",
         "price": None,
         "reason": "nenhum teto aplicavel calculado",
@@ -1154,6 +1197,7 @@ def build_ceiling_prices(
         "bazin": bazin_ceiling,
         "intrinsic_margin": intrinsic,
         "risk_adjusted": risk_adjusted,
+        "margin_bands": margin_bands,
         "projected": projected,
         "recommended": recommended,
         "candidates": candidates,
@@ -1228,7 +1272,7 @@ def score_debt(indicators: dict[str, Any]) -> int:
 
 
 def score_opportunity(price: float, fair_value: float, quality_score: int, indicators: dict[str, Any]) -> int:
-    if not fair_value:
+    if price is None or not fair_value:
         return 0
     discount = safe_div(fair_value - price, fair_value) or 0
     score = 50 + discount * 80 + (quality_score - 70) * 0.35
@@ -1242,7 +1286,7 @@ def risk_level_from(indicators: dict[str, Any], sector: str) -> str:
     leverage = indicators.get("latest", {}).get("net_debt_ebitda") or 0
     if leverage > 3 or "patrimonio_nao_positivo" in issues:
         return "high"
-    if leverage > 2 or sector in ("commodities", "retail") or len(issues) >= 2:
+    if leverage > 2 or sector in ("commodities", "pulp_paper", "retail") or len(issues) >= 2:
         return "medium"
     return "low"
 
@@ -1266,6 +1310,8 @@ def build_risks(data: dict[str, Any], indicators: dict[str, Any]) -> list[dict[s
         risks.append(risk("Regulatorio/concessoes", "medium", "high", "reduz crescimento terminal ou aumenta Ke"))
     if sector == "commodities":
         risks.append(risk("Ciclo de commodity", "high", "high", "exige normalizacao de lucro e margem maior"))
+    if sector == "pulp_paper":
+        risks.append(risk("Ciclo de celulose e CAPEX", "medium", "high", "exige EBITDA normalizado, disciplina de alavancagem e acompanhamento de ciclo"))
     if sector == "retail":
         risks.append(risk("Juros e capital de giro", "medium", "high", "pressiona margem, caixa e custo de capital"))
     if sector in ("banks", "insurance"):
@@ -1534,7 +1580,7 @@ def cvm_find_share_count(rows: list[dict[str, str]], cnpj: str | None, denom: st
     total = parse_cvm_number(row.get("QT_ACAO_TOTAL_CAP_INTEGR")) - parse_cvm_number(row.get("QT_ACAO_TOTAL_TESOURO"))
     if total <= 0:
         return None
-    if total < 100_000_000 and revenue > total * 10_000:
+    if total < 100_000_000 and revenue > total * 1000:
         total *= 1000
     return total
 
