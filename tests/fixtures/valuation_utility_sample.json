@@ -1,0 +1,12 @@
+{
+  "ticker": "CMIG4",
+  "company": {"name": "Utility Teste", "sector": "Energia eletrica", "share_class": "PN"},
+  "market_data": {"current_price": 10.0},
+  "financials": [
+    {"year": 2020, "revenue": 1000, "ebitda": 300, "ebit": 230, "net_income": 150, "equity": 900, "operating_cash_flow": 250, "capex": 80, "free_cash_flow": 170, "dividends_paid": 90, "shares_outstanding": 100, "gross_debt": 400, "cash": 100},
+    {"year": 2021, "revenue": 1050, "ebitda": 315, "ebit": 241, "net_income": 155, "equity": 950, "operating_cash_flow": 255, "capex": 82, "free_cash_flow": 173, "dividends_paid": 92, "shares_outstanding": 100, "gross_debt": 390, "cash": 110},
+    {"year": 2022, "revenue": 1100, "ebitda": 330, "ebit": 253, "net_income": 160, "equity": 1000, "operating_cash_flow": 260, "capex": 85, "free_cash_flow": 175, "dividends_paid": 94, "shares_outstanding": 100, "gross_debt": 380, "cash": 120},
+    {"year": 2023, "revenue": 1150, "ebitda": 345, "ebit": 264, "net_income": 165, "equity": 1050, "operating_cash_flow": 265, "capex": 86, "free_cash_flow": 179, "dividends_paid": 96, "shares_outstanding": 100, "gross_debt": 370, "cash": 130},
+    {"year": 2024, "revenue": 1200, "ebitda": 360, "ebit": 276, "net_income": 170, "equity": 1100, "operating_cash_flow": 270, "capex": 88, "free_cash_flow": 182, "dividends_paid": 98, "shares_outstanding": 100, "gross_debt": 360, "cash": 140}
+  ]
+}

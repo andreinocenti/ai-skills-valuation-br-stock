@@ -1,0 +1,12 @@
+{
+  "ticker": "ABCB4",
+  "company": {"name": "Banco Teste", "sector": "Bancos", "share_class": "PN"},
+  "market_data": {"current_price": 20.0},
+  "financials": [
+    {"year": 2020, "revenue": 1000, "ebitda": 0, "ebit": 0, "net_income": 200, "equity": 1500, "operating_cash_flow": 300, "capex": 10, "free_cash_flow": 220, "dividends_paid": 80, "shares_outstanding": 100, "gross_debt": 0, "cash": 0},
+    {"year": 2021, "revenue": 1050, "ebitda": 0, "ebit": 0, "net_income": 210, "equity": 1600, "operating_cash_flow": 310, "capex": 10, "free_cash_flow": 230, "dividends_paid": 84, "shares_outstanding": 100, "gross_debt": 0, "cash": 0},
+    {"year": 2022, "revenue": 1100, "ebitda": 0, "ebit": 0, "net_income": 220, "equity": 1700, "operating_cash_flow": 320, "capex": 10, "free_cash_flow": 240, "dividends_paid": 88, "shares_outstanding": 100, "gross_debt": 0, "cash": 0},
+    {"year": 2023, "revenue": 1150, "ebitda": 0, "ebit": 0, "net_income": 230, "equity": 1800, "operating_cash_flow": 330, "capex": 10, "free_cash_flow": 250, "dividends_paid": 92, "shares_outstanding": 100, "gross_debt": 0, "cash": 0},
+    {"year": 2024, "revenue": 1200, "ebitda": 0, "ebit": 0, "net_income": 240, "equity": 1900, "operating_cash_flow": 340, "capex": 10, "free_cash_flow": 260, "dividends_paid": 96, "shares_outstanding": 100, "gross_debt": 0, "cash": 0}
+  ]
+}

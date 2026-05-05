@@ -1,0 +1,10 @@
+{
+  "ticker": "BAD3",
+  "company": {"name": "Bad Data", "sector": "Holding", "share_class": "ON"},
+  "market_data": {"current_price": 10.0},
+  "financials": [
+    {"year": 2022, "revenue": 1000, "ebitda": 100, "ebit": 80, "net_income": -20, "equity": 100, "operating_cash_flow": 10, "capex": 50, "free_cash_flow": -40, "dividends_paid": 50, "shares_outstanding": null, "shares_source_status": "nao_encontrado", "gross_debt": 400, "cash": 20},
+    {"year": 2023, "revenue": 900, "ebitda": 80, "ebit": 60, "net_income": -30, "equity": 50, "operating_cash_flow": 5, "capex": 40, "free_cash_flow": -35, "dividends_paid": 60, "shares_outstanding": null, "shares_source_status": "nao_encontrado", "gross_debt": 420, "cash": 15},
+    {"year": 2024, "revenue": 850, "ebitda": 70, "ebit": 50, "net_income": -40, "equity": -10, "operating_cash_flow": 0, "capex": 35, "free_cash_flow": -35, "dividends_paid": 70, "shares_outstanding": null, "shares_source_status": "nao_encontrado", "gross_debt": 430, "cash": 10}
+  ]
+}

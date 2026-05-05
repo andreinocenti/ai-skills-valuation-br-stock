@@ -1,0 +1,12 @@
+{
+  "ticker": "VALE3",
+  "company": {"name": "Commodity Teste", "sector": "Mineracao e commodities", "share_class": "ON"},
+  "market_data": {"current_price": 50.0},
+  "financials": [
+    {"year": 2020, "revenue": 1000, "ebitda": 350, "ebit": 280, "net_income": 200, "equity": 1200, "operating_cash_flow": 300, "capex": 90, "free_cash_flow": 210, "dividends_paid": 120, "shares_outstanding": 100, "gross_debt": 300, "cash": 150},
+    {"year": 2021, "revenue": 1300, "ebitda": 520, "ebit": 430, "net_income": 300, "equity": 1350, "operating_cash_flow": 410, "capex": 95, "free_cash_flow": 315, "dividends_paid": 170, "shares_outstanding": 100, "gross_debt": 320, "cash": 160},
+    {"year": 2022, "revenue": 1200, "ebitda": 420, "ebit": 340, "net_income": 240, "equity": 1450, "operating_cash_flow": 330, "capex": 100, "free_cash_flow": 230, "dividends_paid": 130, "shares_outstanding": 100, "gross_debt": 310, "cash": 170},
+    {"year": 2023, "revenue": 1100, "ebitda": 370, "ebit": 295, "net_income": 210, "equity": 1500, "operating_cash_flow": 310, "capex": 98, "free_cash_flow": 212, "dividends_paid": 115, "shares_outstanding": 100, "gross_debt": 305, "cash": 180},
+    {"year": 2024, "revenue": 1250, "ebitda": 450, "ebit": 365, "net_income": 260, "equity": 1600, "operating_cash_flow": 360, "capex": 102, "free_cash_flow": 258, "dividends_paid": 140, "shares_outstanding": 100, "gross_debt": 300, "cash": 185}
+  ]
+}
