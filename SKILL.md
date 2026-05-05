@@ -56,8 +56,8 @@ Se o usuario nao informar premissas, assuma:
 - cenarios: conservador, base e otimista
 - crescimento terminal: conservador e inferior ao crescimento nominal agressivo de longo prazo
 - crescimento de lucro e FCL:
-  - projete o ano corrente com taxa conservadora ou com override informado
-  - do ano 2 em diante, use apenas inflacao de `5%` por padrao
+- projete o ano corrente com taxa conservadora ou com override informado
+  - do ano 2 em diante, faça convergencia gradual para inflacao de `5%` por padrao, sem colapsar todos os cenarios no mesmo ritmo
 - taxa esperada de crescimento por Peter Lynch: `ROE * (1 - payout)`
 
 Revise defaults usando [references/assumptions_policy.md](references/assumptions_policy.md) e [references/sector_rules.md](references/sector_rules.md).
@@ -82,6 +82,9 @@ Se um numero relevante vier de fonte auxiliar, tente confirmar em fonte oficial 
 - Ajuste splits, grupamentos e mudancas relevantes no numero de acoes.
 - Nao trate um ano excepcional de commodity ou venda de ativo como base recorrente.
 - Sinalize baixa confiabilidade quando o valuation depender de muitas inferencias.
+- Nunca invente dividendos a partir de payout arbitrario ou percentual fixo do lucro.
+- Se faltarem dividendos ano a ano, so use media anual observada em anos com fonte.
+- Se o numero de acoes por periodo nao puder ser reconciliado por fonte ou input estruturado confiavel, bloqueie valuation completo.
 
 Regras detalhadas:
 
@@ -116,6 +119,7 @@ Consulte [references/valuation_methods.md](references/valuation_methods.md) e [r
 Antes de concluir:
 
 - declare `skill_version` e `engine_version` no Markdown e no JSON final
+- declare `valuation_status` como `complete` ou `partial`
 - declare `confidence`
 - liste dados faltantes e inferencias
 - explique premissas por ano
@@ -123,6 +127,7 @@ Antes de concluir:
 - mostre payout medio de 5 e 10 anos quando houver historico suficiente
 - mostre ROE atual, ROE projetado e crescimento esperado por Peter Lynch
 - nao esconda conflito entre metodos
+- trate `preco teto projetivo` como preco presente de entrada, nao como alvo futuro bruto
 
 Se os dados forem insuficientes, entregue analise parcial e diga explicitamente o que faltou.
 
@@ -190,7 +195,7 @@ Quando o usuario informar apenas um ticker:
    - `<ticker>-report.md` quando `ok=true`
    - `cache/` para documentos CVM/B3 baixados pela pipeline
 3. Se `ok` for `true`, entregue o `report.markdown` e destaque as fontes/limitacoes.
-4. Se `ok` for `false`, entregue o dataset parcial, explique quais fontes falharam e solicite os dados faltantes.
+4. Se `ok` for `false`, entregue o dataset parcial ou relatorio parcial, explique quais fontes falharam e solicite os dados faltantes.
 
 Quando o usuario informar um caso de teste com premissas fechadas:
 

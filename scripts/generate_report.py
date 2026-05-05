@@ -177,6 +177,7 @@ def render_ceiling_bridge(valuation):
         f"- Faixa teto 20%: {brl(margin_bands.get('0.20'))}",
         f"- Faixa teto 25%: {brl(margin_bands.get('0.25'))}",
         f"- Preco teto recomendado: {brl(recommended.get('price'))}",
+        f"- Semantica do preco teto recomendado: {recommended.get('price_semantics', 'preco_presente_de_entrada')}",
         f"- Metodo recomendado: {recommended.get('method')}",
         f"- Motivo: {recommended.get('reason')}",
     ]
@@ -247,6 +248,7 @@ def generate_markdown(valuation, sensitivity):
 
 - Versao da skill: {valuation.get('skill_version', valuation.get('calculation_metadata', {}).get('skill_version', 'valuation-br-stock'))}
 - Versao do motor: {valuation.get('calculation_metadata', {}).get('engine_version', 'nao informada')}
+- Status do valuation: {valuation.get('calculation_metadata', {}).get('valuation_status', 'nao informado')}
 
 ## 2. Dados da empresa
 - Nome: {valuation['company_name']}
@@ -325,6 +327,7 @@ def generate_markdown(valuation, sensitivity):
 
 ## 13. Preco teto projetivo
 - Preco teto projetivo: {brl(valuation['projected_ceiling_price'])}
+- Semantica: preco presente de entrada, descontado ao custo de capital e ja com margem de seguranca
 - Preco teto projetivo futuro sem desconto: {brl(valuation.get('projected_future_ceiling_price'))}
 {render_projected_ceiling_prices(valuation.get('projected_ceiling_prices', []))}
 
@@ -336,6 +339,9 @@ def generate_markdown(valuation, sensitivity):
 
 ## 14. Reverse DCF
 - Crescimento implicito: {pct(valuation['valuation']['reverse_dcf'].get('implied_growth'))}
+- Base usada: {valuation['valuation']['reverse_dcf'].get('basis')}
+- Fluxo atual por acao usado: {brl(valuation['valuation']['reverse_dcf'].get('current_cash_flow_per_share'))}
+- Metodo: {valuation['valuation']['reverse_dcf'].get('method')}
 
 ## 15. Comparacao com pares
 {render_peers(valuation)}

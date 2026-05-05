@@ -95,6 +95,13 @@
     },
     "calculation_metadata": {
       "type": "object",
+      "properties": {
+        "valuation_status": {
+          "type": "string",
+          "enum": ["complete", "partial"]
+        }
+      },
+      "required": ["valuation_status"],
       "additionalProperties": true
     },
     "valuation": {

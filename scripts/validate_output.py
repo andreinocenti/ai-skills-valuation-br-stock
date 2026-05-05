@@ -89,6 +89,8 @@ def main():
         missing.append("markdown.engine_version")
     if not payload.get("calculation_metadata", {}).get("engine_version"):
         missing.append("calculation_metadata.engine_version")
+    if payload.get("calculation_metadata", {}).get("valuation_status") not in ("complete", "partial"):
+        missing.append("calculation_metadata.valuation_status")
     valuation = payload.get("valuation", {})
     missing += [f"valuation.{method}" for method in REQUIRED_METHODS if method not in valuation]
     ceiling_prices = payload.get("ceiling_prices", {})
@@ -97,6 +99,11 @@ def main():
             missing.append(f"ceiling_prices.{key}")
     if ceiling_prices.get("recommended", {}).get("price") != payload.get("suggested_ceiling_price"):
         missing.append("ceiling_prices.recommended.price_matches_suggested")
+    if ceiling_prices.get("recommended", {}).get("price_semantics") != "preco_presente_de_entrada":
+        missing.append("ceiling_prices.recommended.price_semantics")
+    projected_rows = payload.get("projected_ceiling_prices", [])
+    if projected_rows and any(row.get("price_semantics") != "preco_presente_de_entrada" for row in projected_rows):
+        missing.append("projected_ceiling_prices.price_semantics")
     if not payload.get("risks"):
         missing.append("risks")
     if not payload.get("limitations"):

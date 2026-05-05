@@ -9,6 +9,7 @@
 ## 4. Cotacao atual e visao geral
 - Versao da skill: [skill_version]
 - Versao do motor: [engine_version]
+- Status do valuation: [complete|partial]
 ## 5. Diagnostico fundamentalista
 ## 6. Qualidade do lucro
 ## 7. Dividendos e payout
@@ -47,3 +48,4 @@ Inclua:
 - `risk_level`
 - `verdict`
 - `confidence`
+- `calculation_metadata.valuation_status`
