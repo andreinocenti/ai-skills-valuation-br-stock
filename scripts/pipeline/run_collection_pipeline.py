@@ -11,6 +11,14 @@ from collectors.dividend_collector import collect_dividends
 from collectors.market_data_collector import collect_market_data
 from collectors.macro_collector import collect_macro
 from collectors.peer_group_collector import collect_peer_group
+from collectors.ri_document_collector import collect_ri_documents
+from nlp.covenant_detector import detect_covenants
+from nlp.guidance_extractor import extract_guidance
+from nlp.management_tone_analyzer import analyze_tone
+from nlp.non_recurring_detector import extract_non_recurring_items
+from nlp.risk_extractor import extract_risks
+from parsers.release_parser import parse_release
+from quality.quality_of_earnings import build_quality_of_earnings
 from valuation_core import (
     calculate_ttm,
     SOURCE_AUXILIARY,
@@ -37,7 +45,28 @@ def run_pipeline(ticker, cache_dir, years=None, fetch_macro_data=True):
     years = years or default_years()
     company = enrich_from_cvm_registry(resolve_company(ticker))
     market_data = collect_market_data(ticker)
-    dividend_data = collect_dividends(ticker)
+    ri_documents = collect_ri_documents(ticker)
+    parsed_ri_documents = []
+    ri_nlp = []
+    for document in ri_documents.get("documents", [])[:20]:
+        if isinstance(document, dict):
+            text = document.get("text") or ""
+            meta = dict(document)
+        else:
+            text = str(document)
+            meta = {"url": document}
+        parsed = parse_release(text)
+        parsed["source"] = meta.get("url") or meta.get("id") or "ri_document"
+        parsed_ri_documents.append(parsed)
+        ri_nlp.append({
+            "source": parsed["source"],
+            "guidance": extract_guidance(text),
+            "risks": extract_risks(text),
+            "covenants": detect_covenants(text),
+            "non_recurring_items": extract_non_recurring_items(text),
+            "management_tone": analyze_tone(text),
+        })
+    dividend_data = collect_dividends(ticker, company, cache_dir=cache_dir, years=years)
     macro_data = collect_macro() if fetch_macro_data else {}
     sources = [
         source_entry("company_resolver", company.get("source_status", SOURCE_INFERRED), "resolved"),
@@ -55,10 +84,13 @@ def run_pipeline(ticker, cache_dir, years=None, fetch_macro_data=True):
         itr_result = collect_itr_financials(cvm_code, [years[-1]], cache_dir)
         itr_financials = merge_financial_rows(itr_result.get("financials", []))
         financials = enrich_financials_with_market_data(financials, market_data, company)
+        if dividend_data.get("events"):
+            financials = enrich_financials_with_market_data(financials, {"dividend_events": dividend_data.get("events")}, company)
         sources.append(source_entry("CVM DFP estruturada", cvm_result.get("source_status", SOURCE_OFFICIAL), "collected"))
         sources.append(source_entry("CVM ITR estruturada", itr_result.get("source_status", SOURCE_OFFICIAL), "collected"))
     ttm = calculate_ttm(financials, itr_financials)
     peer_group = collect_peer_group(ticker)
+    quality_of_earnings = build_quality_of_earnings(financials, parsed_ri_documents)
     limitations = []
     if not cvm_code:
         limitations.append("Codigo CVM nao resolvido automaticamente para o ticker.")
@@ -89,6 +121,12 @@ def run_pipeline(ticker, cache_dir, years=None, fetch_macro_data=True):
         "itr_financials": itr_financials,
         "ttm": ttm,
         "dividend_events": dividend_data.get("events", []),
+        "dividend_reconciliation": dividend_data.get("reconciliation", {}),
+        "dividend_source_summary": dividend_data.get("source_summary", {}),
+        "ri_documents": ri_documents.get("documents", []),
+        "parsed_ri_documents": parsed_ri_documents,
+        "ri_nlp": ri_nlp,
+        "quality_of_earnings": quality_of_earnings,
         "peer_group": peer_group.get("peers", []),
         "sources": sources,
         "limitations": limitations,

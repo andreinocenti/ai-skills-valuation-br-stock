@@ -85,7 +85,7 @@ def render_dividend_events(events):
     if not events:
         return "- Eventos de dividendos nao coletados"
     recurring = [event for event in events if event.get("is_recurring")]
-    extraordinary = [event for event in events if event.get("event_type") == "extraordinario"]
+    extraordinary = [event for event in events if event.get("is_extraordinary") or event.get("event_type") == "extraordinario" or event.get("type") in ("capital_reduction", "restitution")]
     sample = events[-5:]
     rows = [
         f"- Eventos coletados: {len(events)}",
@@ -93,7 +93,7 @@ def render_dividend_events(events):
         f"- Extraordinarios/fora da curva estimados: {len(extraordinary)}",
     ]
     rows.extend(
-        f"- {event.get('date', 'sem data')}: {brl(event.get('amount_per_share'))} por acao ({event.get('event_type', 'unknown')})"
+        f"- {event.get('date', event.get('payment_date', 'sem data'))}: {brl(event.get('amount_per_share'))} por acao ({event.get('event_type', event.get('type', 'unknown'))})"
         for event in sample
     )
     return lines(rows)
@@ -103,6 +103,9 @@ def render_dividend_policy(policy):
     if not policy:
         return "- Politica de dividendos nao calculada"
     return lines([
+        f"- DPA reportado medio anual: {brl(policy.get('reported_dpa_per_year_average'))}",
+        f"- DPA extraordinario medio anual: {brl(policy.get('extraordinary_dpa_per_year_average'))}",
+        f"- DPA recorrente medio anual: {brl(policy.get('recurring_dpa_per_year_average'))}",
         f"- DPA medio anual recorrente: {brl(policy.get('annual_dpa_mean'))}",
         f"- DPA mediano anual recorrente: {brl(policy.get('annual_dpa_median'))}",
         f"- Dividendo seguro usado: {brl(policy.get('safe_dividend_per_share'))}",
@@ -110,7 +113,56 @@ def render_dividend_policy(policy):
         f"- Yield seguro sobre preco atual: {pct(policy.get('safe_yield_on_current_price'))}",
         f"- Estabilidade: {policy.get('stability')}",
         f"- Cobertura historica de pagamentos: {pct(policy.get('coverage'))}",
+        f"- Anos confiaveis: {policy.get('reliable_years')}",
+        f"- Payout medio 5 anos: {pct(policy.get('payout_5y'))}",
+        f"- Payout medio 10 anos: {pct(policy.get('payout_10y'))}",
+        f"- Fontes por evento: {json.dumps(policy.get('source_counts', {}), ensure_ascii=True, sort_keys=True)}",
         f"- Decisao para Bazin/DDM no valor justo: {policy.get('method_action')}",
+    ])
+
+
+def render_dividend_sources(valuation):
+    policy = valuation.get("diagnosis", {}).get("dividend_policy", {})
+    reconciliation = valuation.get("dividend_reconciliation", {})
+    source_summary = valuation.get("dividend_source_summary", {})
+    rows = [
+        f"- Fontes primarias usadas: {', '.join(reconciliation.get('primary_sources_used', [])) or 'nenhuma'}",
+        f"- Fallbacks verificados: {', '.join(reconciliation.get('fallback_sources_checked', [])) or 'nenhum'}",
+        f"- Eventos por fonte: {json.dumps(policy.get('source_counts', {}), ensure_ascii=True, sort_keys=True)}",
+        f"- Confianca final para Bazin/DDM: {policy.get('income_method_reliability', 'nao informada')}",
+    ]
+    rows.extend(
+        f"- Fonte {name}: attempted={item.get('attempted')} succeeded={item.get('succeeded')} events={item.get('events_found')}"
+        for name, item in source_summary.items()
+    )
+    rows.extend(
+        f"- Divergencia reconciliada em {item.get('field')}: selecionado {item.get('selected')}"
+        for item in reconciliation.get("divergences", [])
+    )
+    return lines(rows)
+
+
+def render_methodology(valuation):
+    roles = valuation.get("valuation", {}).get("method_roles", {})
+    return lines([
+        f"- Metodos principais: {', '.join(roles.get('primary_methods', [])) or 'n/a'}",
+        f"- Metodos secundarios: {', '.join(roles.get('secondary_methods', [])) or 'n/a'}",
+        f"- Sanity checks: {', '.join(roles.get('sanity_checks', [])) or 'n/a'}",
+        f"- Informativos: {', '.join(roles.get('informational_methods', [])) or 'n/a'}",
+        *[
+            f"- Metodo excluido {item.get('method')}: {item.get('reason')}"
+            for item in roles.get("excluded_methods", [])
+        ],
+    ])
+
+
+def render_sanity_checks(valuation):
+    checks = valuation.get("sanity_validation", {}).get("sanity_checks", [])
+    if not checks:
+        return "- Nenhum alerta adicional"
+    return lines([
+        f"- {item.get('check')}: {item.get('status')} - {item.get('message')}"
+        for item in checks
     ])
 
 
@@ -161,6 +213,7 @@ def render_ceiling_bridge(valuation):
     intrinsic = ceilings.get("intrinsic_margin", {})
     risk_adjusted = ceilings.get("risk_adjusted", {})
     projected = ceilings.get("projected", {}).get("year_5") or {}
+    projected_meta = ceilings.get("projected", {})
     margin_bands = ceilings.get("margin_bands", {})
     risk_policy = valuation.get("calculation_metadata", {}).get("risk_adjustments", {})
     adjustments = risk_policy.get("adjustments", [])
@@ -172,6 +225,8 @@ def render_ceiling_bridge(valuation):
         f"- Margem final ajustada ao risco: {pct(risk_policy.get('final_margin'))}",
         f"- Bazin classico selecionado: {brl(bazin.get('selected_classic_price'))}",
         f"- Bazin conservador selecionado: {brl(bazin.get('selected_price'))} no yield {pct(bazin.get('selected_yield'))}",
+        f"- Teto projetivo presente de entrada: {brl(projected_meta.get('entry_projected_ceiling_price'))}",
+        f"- Teto projetivo futuro bruto: {brl(projected_meta.get('projected_future_ceiling_price'))}",
         f"- Teto projetivo ano 5: {brl(projected.get('ceiling_price'))}",
         f"- Faixa teto 15%: {brl(margin_bands.get('0.15'))}",
         f"- Faixa teto 20%: {brl(margin_bands.get('0.20'))}",
@@ -281,6 +336,10 @@ def generate_markdown(valuation, sensitivity):
 ## 6. Qualidade do lucro
 - Score de qualidade dos dados: {valuation['data_quality']['score']}/100
 - Alertas: {', '.join(valuation['data_quality']['issues']) if valuation['data_quality']['issues'] else 'nenhum alerta critico'}
+- Lucro reportado: {brl((valuation.get('quality_of_earnings') or {}).get('reported_net_income'))}
+- Lucro ajustado: {brl((valuation.get('quality_of_earnings') or {}).get('adjusted_net_income'))}
+- FCF reportado: {brl((valuation.get('quality_of_earnings') or {}).get('reported_fcf'))}
+- FCF normalizado: {brl((valuation.get('quality_of_earnings') or {}).get('normalized_fcf'))}
 
 ## 7. Dividendos e payout
 - Yield seguro: {pct(valuation['dividend_safe_yield'])}
@@ -294,6 +353,9 @@ def generate_markdown(valuation, sensitivity):
 
 ### Eventos de dividendos
 {render_dividend_events(valuation.get('dividend_events', []))}
+
+### Fontes e reconciliacao de dividendos
+{render_dividend_sources(valuation)}
 
 ### Politica de dividendos para valuation
 {render_dividend_policy(valuation.get('diagnosis', {}).get('dividend_policy', {}))}
@@ -312,6 +374,9 @@ def generate_markdown(valuation, sensitivity):
 
 ## 10. Metodos de valuation
 {render_methods(valuation)}
+
+### Metodologia setorial
+{render_methodology(valuation)}
 
 ## 11. Analise de sensibilidade
 {render_sensitivity(sensitivity)}
@@ -351,6 +416,9 @@ def generate_markdown(valuation, sensitivity):
 
 ### Cenarios futuros de impacto
 {render_future_impacts(valuation.get('future_impacts', []))}
+
+### Sanity checks do valuation
+{render_sanity_checks(valuation)}
 
 ## 17. Score final
 - Score de qualidade: {valuation['quality_score']}/100

@@ -14,6 +14,7 @@ def parse_release(text):
         "guidance_mentions": guidance,
         "risk_mentions": risks,
         "non_recurring_items": detect_non_recurring_from_text(text),
+        "management_comments": re.findall(r"administra[a-z]+[^.\n]*[.\n]", text, flags=re.IGNORECASE),
     }
 
 

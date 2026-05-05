@@ -255,12 +255,77 @@ def normalize_dividend_events(raw_amounts: list[Any]) -> list[dict[str, Any]]:
                 "date": raw.get("date") or str(index + 1),
                 "year": raw.get("year"),
                 "source_status": raw.get("source_status", SOURCE_AUXILIARY),
+                "source": raw.get("source", "UNKNOWN"),
+                "source_confidence": raw.get("source_confidence", "low"),
+                "share_class": raw.get("share_class", "ALL"),
+                "raw_evidence": raw.get("raw_evidence"),
+                "type": raw.get("type", item.get("event_type")),
+                "event_type": raw.get("event_type", item.get("event_type")),
+                "is_recurring": raw.get("is_recurring", item.get("is_recurring")),
+                "is_extraordinary": raw.get("is_extraordinary", raw.get("type") in ("capital_reduction", "restitution", "bonus")),
+                "extraordinary_reason": raw.get("extraordinary_reason"),
             })
         else:
             item = classify_dividend_event(float(raw), med)
-            item.update({"date": str(index + 1), "year": None, "source_status": SOURCE_AUXILIARY})
+            item.update({"date": str(index + 1), "year": None, "source_status": SOURCE_AUXILIARY, "source": "UNKNOWN", "source_confidence": "low", "share_class": "ALL"})
         events.append(item)
     return events
+
+
+def classify_dividend_recurrence(events: list[dict[str, Any]], financials: list[dict[str, Any]] | None = None, releases_context: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    normalized = normalize_dividend_events(events or [])
+    by_year_reported: dict[int, float] = {}
+    by_year_recurring: dict[int, float] = {}
+    by_year_extra: dict[int, float] = {}
+    reliable_years = 0
+    source_counts: dict[str, int] = {}
+    low_confidence_only = True
+    for event in normalized:
+        year = event.get("year")
+        if year is None and event.get("date"):
+            match = re.match(r"(\d{4})", str(event["date"]))
+            year = int(match.group(1)) if match else None
+        if year is None:
+            continue
+        amount = float(event.get("amount_per_share") or 0.0)
+        event_type = event.get("type") or event.get("event_type")
+        extraordinary = bool(event.get("is_extraordinary")) or event_type == "extraordinario"
+        source = event.get("source", "UNKNOWN")
+        source_counts[source] = source_counts.get(source, 0) + 1
+        if event.get("source_confidence") in ("high", "medium", "medium_high"):
+            low_confidence_only = False
+            reliable_years += 1
+        by_year_reported[year] = by_year_reported.get(year, 0.0) + amount
+        if extraordinary:
+            by_year_extra[year] = by_year_extra.get(year, 0.0) + amount
+        else:
+            by_year_recurring[year] = by_year_recurring.get(year, 0.0) + amount
+    recurring_values = [value for _, value in sorted(by_year_recurring.items()) if value > 0]
+    extra_values = [value for _, value in sorted(by_year_extra.items()) if value > 0]
+    reported_values = [value for _, value in sorted(by_year_reported.items()) if value > 0]
+    payout_map = {}
+    for row in financials or []:
+        shares = row.get("shares_outstanding") or 0
+        if shares and row.get("net_income_adjusted", row.get("net_income", 0)) > 0 and row.get("year") in by_year_recurring:
+            total_dividends = by_year_recurring[row["year"]] * shares
+            payout_map[row["year"]] = safe_div(total_dividends, row.get("net_income_adjusted", row.get("net_income", 0)))
+    payout_values = [value for _, value in sorted(payout_map.items()) if value is not None]
+    return {
+        "annual_dpa_reported": by_year_reported,
+        "annual_dpa_recurring": by_year_recurring,
+        "annual_dpa_extraordinary": by_year_extra,
+        "dpa_mean_5y": average(recurring_values[-5:]),
+        "dpa_median_5y": median(recurring_values[-5:]),
+        "dpa_mean_10y": average(recurring_values[-10:]),
+        "dpa_median_10y": median(recurring_values[-10:]),
+        "payout_5y": average(payout_values[-5:]),
+        "payout_10y": average(payout_values[-10:]),
+        "reliable_years": len([value for value in recurring_values if value > 0]),
+        "source_counts": source_counts,
+        "low_confidence_only": low_confidence_only,
+        "events": normalized,
+        "extraordinary_reasons": list({event.get("extraordinary_reason") for event in normalized if event.get("extraordinary_reason")}),
+    }
 
 
 def calculate_indicators(input_data: dict[str, Any]) -> dict[str, Any]:
@@ -308,6 +373,7 @@ def calculate_indicators(input_data: dict[str, Any]) -> dict[str, Any]:
     dividend_yields = [row.get("dividend_yield") for row in yearly]
     dpas = [row.get("dpa") for row in yearly if row.get("dpa") is not None]
     dividend_events = data.get("dividend_events") or normalize_dividend_events(data.get("market_data", {}).get("dividend_history") or [])
+    recurrence = classify_dividend_recurrence(dividend_events, financials, data.get("parsed_ri_documents") or [])
     quality = assess_data_quality(data, yearly)
     output = {
         "ticker": data.get("ticker"),
@@ -322,6 +388,7 @@ def calculate_indicators(input_data: dict[str, Any]) -> dict[str, Any]:
             "years_paid": len([value for value in dpas if value and value > 0]),
             "stability": dividend_stability(dpas),
             "events": dividend_events,
+            "recurrence": recurrence,
         },
         "data_quality": quality,
     }
@@ -352,10 +419,13 @@ def dividend_policy(indicators: dict[str, Any], current_price: float | None = No
     positive_dpas = [value for value in dpas if value and value > 0]
     latest_ind = indicators.get("latest", {})
     divs = indicators.get("dividends", {})
+    recurrence = divs.get("recurrence", {})
     stability = divs.get("stability", "none")
     coverage = safe_div(len(positive_dpas), len(dpas)) or 0.0
-    average_dpa = average(positive_dpas) or 0.0
-    median_dpa = median(positive_dpas) or 0.0
+    average_dpa = recurrence.get("dpa_mean_5y") or average(positive_dpas) or 0.0
+    median_dpa = recurrence.get("dpa_median_5y") or median(positive_dpas) or 0.0
+    reported_dpa = average(list((recurrence.get("annual_dpa_reported") or {}).values())) or 0.0
+    extraordinary_dpa = average(list((recurrence.get("annual_dpa_extraordinary") or {}).values())) or 0.0
     latest_dpa = latest_ind.get("dpa") or 0.0
     candidates = [value for value in (median_dpa, average_dpa, latest_dpa) if value > 0]
     if not candidates:
@@ -375,9 +445,11 @@ def dividend_policy(indicators: dict[str, Any], current_price: float | None = No
     if sustainable_caps:
         selected = min(selected, min(sustainable_caps))
 
-    payout = latest_ind.get("payout_adjusted")
-    suitable = stability in ("high", "medium") and coverage >= 0.6 and selected > 0 and (payout is None or payout <= 1.0)
-    if stability == "low" or coverage < 0.6 or (payout and payout > 1.0):
+    payout = recurrence.get("payout_5y") or latest_ind.get("payout_adjusted")
+    source_counts = recurrence.get("source_counts", {})
+    low_confidence_only = recurrence.get("low_confidence_only", False)
+    suitable = stability in ("high", "medium") and coverage >= 0.6 and selected > 0 and (payout is None or payout <= 1.0) and not low_confidence_only
+    if stability == "low" or coverage < 0.6 or (payout and payout > 1.0) or low_confidence_only:
         reliability = "low"
         method_action = "calculate_but_exclude_from_weighted_fair_value"
         suitable = False
@@ -391,6 +463,10 @@ def dividend_policy(indicators: dict[str, Any], current_price: float | None = No
     return {
         "stability": stability,
         "coverage": coverage,
+        "source_counts": source_counts,
+        "reported_dpa_per_year_average": reported_dpa,
+        "extraordinary_dpa_per_year_average": extraordinary_dpa,
+        "recurring_dpa_per_year_average": average_dpa,
         "annual_dpa_mean": average_dpa,
         "annual_dpa_median": median_dpa,
         "latest_dpa": latest_dpa,
@@ -401,6 +477,10 @@ def dividend_policy(indicators: dict[str, Any], current_price: float | None = No
         "suitable_for_bazin_ddm_weight": suitable,
         "income_method_reliability": reliability,
         "method_action": method_action,
+        "reliable_years": recurrence.get("reliable_years", 0),
+        "payout_5y": recurrence.get("payout_5y"),
+        "payout_10y": recurrence.get("payout_10y"),
+        "low_confidence_only": low_confidence_only,
     }
 
 
@@ -1009,6 +1089,10 @@ def valuation_readiness(data: dict[str, Any], indicators: dict[str, Any]) -> dic
 
 
 def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
+    from valuation.discount_rate_builder import build_discount_rate
+    from valuation.method_role_selector import select_method_roles
+    from valuation.validate_valuation_sanity import validate_valuation_sanity
+
     data = normalize_financials(data)
     indicators = calculate_indicators(data)
     readiness = valuation_readiness(data, indicators)
@@ -1022,9 +1106,14 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     market_cap = infer_market_cap(data)
     investment_horizon_years = resolve_investment_horizon_years(data)
     data["investment_horizon_years"] = investment_horizon_years
+    discount_builder = build_discount_rate(data.get("macro_data", {}), sector, latest_ind, indicators.get("data_quality", {}), data.get("required_return"))
+    data["required_return"] = discount_builder["wacc"]
     discount_policy = discount_rate_policy(data, sector, indicators)
-    data["required_return"] = discount_policy["ke_used"]
-    required_return = discount_policy["ke_used"]
+    discount_policy["builder"] = discount_builder
+    discount_policy["ke_spot"] = discount_builder["ke_spot"]
+    discount_policy["ke_normalized"] = discount_builder["ke_normalized"]
+    discount_policy["ke_used"] = discount_builder["wacc"]
+    required_return = discount_builder["wacc"]
     scenarios = build_scenarios(data, indicators)
     projection_overrides = data.get("projection_overrides", {}) or {}
     for scenario in scenarios.values():
@@ -1036,6 +1125,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
     payout_stats = payout_profile(financials)
     lynch_expected_growth = peter_lynch_expected_growth_rate(indicators["latest"].get("roe"), payout_stats.get("reference"))
     safe_dividend = div_policy.get("safe_dividend_per_share", 0.0)
+    method_roles = select_method_roles(sector, div_policy.get("income_method_reliability") in ("high", "medium"), holding_methods_available(data))
     graham = None
     if (latest_ind.get("lpa") or 0) > 0 and (latest_ind.get("vpa") or 0) > 0:
         graham = math.sqrt(22.5 * latest_ind["lpa"] * latest_ind["vpa"])
@@ -1207,6 +1297,9 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         },
         "company": data.get("company", {}),
         "sources": data.get("sources", []),
+        "dividend_reconciliation": data.get("dividend_reconciliation", {}),
+        "dividend_source_summary": data.get("dividend_source_summary", {}),
+        "parsed_ri_documents": data.get("parsed_ri_documents", []),
         "ttm": data.get("ttm"),
         "dividend_events": indicators.get("dividends", {}).get("events", []),
         "data_quality": indicators["data_quality"],
@@ -1247,6 +1340,7 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
             "sotp": method_record(sum_sotp(data), sum_sotp(data) is not None, method_reliability("sotp", data, indicators), sector_method_weights(sector).get("sotp", 0), "SOTP e principal para holdings quando partes sao informadas"),
             "nav": method_record(net_asset_value(data, shares), net_asset_value(data, shares) is not None, method_reliability("nav", data, indicators), sector_method_weights(sector).get("nav", 0), "NAV e principal para holdings quando ativos sao informados"),
             "sector_weights": sector_method_weights(sector),
+            "method_roles": method_roles,
         },
         "scenarios": scenario_results,
         "sensitivity": {},
@@ -1259,6 +1353,8 @@ def calculate_valuation(data: dict[str, Any]) -> dict[str, Any]:
         },
         "limitations": build_limitations(data, indicators) + ([] if readiness["full_valuation_allowed"] else [f"Valuation completo bloqueado: {', '.join(readiness['reasons'])}."]),
     }
+    output["sanity_validation"] = validate_valuation_sanity(output)
+    output["quality_of_earnings"] = data.get("quality_of_earnings")
     output["limitations"] = list(dict.fromkeys(output["limitations"]))
     return output
 
@@ -1404,6 +1500,18 @@ def build_ceiling_prices(
     projected = {
         "years": projected_rows,
         "year_5": projected_rows[-1] if projected_rows else None,
+        "year_1": projected_rows[0] if projected_rows else None,
+        "entry_projected_ceiling_price": projected_rows[-1]["ceiling_price"] if projected_rows else None,
+        "projected_future_ceiling_price": projected_rows[-1]["future_ceiling_price"] if projected_rows else None,
+        "future_monitoring_ceiling_band": [
+            {
+                "year": row["year"],
+                "entry_projected_ceiling_price": row["ceiling_price"],
+                "projected_future_ceiling_price": row["future_ceiling_price"],
+                "price_semantics": "preco_presente_de_entrada",
+            }
+            for row in projected_rows
+        ],
     }
     candidates = []
 
@@ -1430,6 +1538,7 @@ def build_ceiling_prices(
         add_candidate("dcf_fcff_margin", ceiling_from_method(method_map.get("dcf_fcff"), risk_margin), "commodity converte DCF conservador em preco de entrada com margem")
         add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "setor ciclico usa margem ajustada ao risco")
     elif sector == "utilities":
+        add_candidate("projected_year_1", projected_rows[0]["ceiling_price"] if projected_rows else None, "utility regulada usa preco presente de entrada do primeiro ano projetivo como ancora conservadora")
         add_candidate("intrinsic_margin", intrinsic["ceiling_price"], "utility regulada prioriza valor justo com margem")
         add_candidate("risk_adjusted", risk_adjusted["ceiling_price"], "referencia conservadora ajustada ao risco")
         add_candidate("projected", projected_price, "teto projetivo descontado para monitoramento, nao para entrada principal")
@@ -1456,7 +1565,7 @@ def build_ceiling_prices(
         recommended = next((item for item in candidates if item["method"] == "residual_income_margin"), None)
         recommended = recommended or next((item for item in candidates if item["method"] == "p_vp_justified_margin"), None)
     elif sector == "utilities":
-        recommended = next((item for item in candidates if item["method"] == "intrinsic_margin"), None)
+        recommended = next((item for item in candidates if item["method"] == "projected_year_1"), None)
     elif sector == "pulp_paper":
         recommended = next((item for item in candidates if item["method"] == "pulp_paper_fair_value_15pct"), None)
     else:
