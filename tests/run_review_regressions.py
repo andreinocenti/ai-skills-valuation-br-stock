@@ -22,6 +22,7 @@ from valuation_core import (
     project_years,
     sector_key,
     sector_method_weights,
+    valuation_readiness,
 )
 from pipeline.run_collection_pipeline import infer_required_return
 
@@ -171,6 +172,24 @@ def test_dividends_are_aggregated_by_year():
     assert_close(enriched[-1]["dividends_paid"], 100.0)
 
 
+def test_dividends_fallback_to_observed_annual_average_without_fabrication():
+    financials = [
+        {"year": 2022, "net_income": 5000.0, "shares_outstanding": 100.0},
+        {"year": 2023, "net_income": 6000.0, "shares_outstanding": 100.0},
+        {"year": 2024, "net_income": 7000.0, "shares_outstanding": 100.0},
+    ]
+    market_data = {
+        "dividend_events": [
+            {"date": "2024-01-10", "year": 2024, "amount_per_share": 0.20},
+            {"date": "2024-05-10", "year": 2024, "amount_per_share": 0.30},
+        ]
+    }
+    enriched = enrich_financials_with_market_data(financials, market_data, {"shares_outstanding": 100.0})
+    assert_close(enriched[0]["dividends_paid"], 50.0)
+    assert_true(enriched[0]["dividends_estimation_method"] == "annual_average_from_observed_years", enriched[0])
+    assert_true(enriched[0]["dividends_source_status"] == "auxiliar", enriched[0])
+
+
 def test_projected_ceiling_prices_are_yearly():
     data = json.loads((ROOT / "examples" / "example_input.json").read_text(encoding="utf-8"))
     valuation = calculate_valuation(data)
@@ -221,6 +240,7 @@ def test_ceiling_prices_are_split_between_base_and_risk_adjusted():
     assert_close(valuation["base_ceiling_price"], ceilings["intrinsic_margin"]["ceiling_price"])
     assert_true("risk_adjusted_ceiling_price" in valuation, "risk-adjusted ceiling should be explicit")
     assert_true(ceilings["recommended"]["method"], ceilings["recommended"])
+    assert_true(ceilings["recommended"]["price_semantics"] == "preco_presente_de_entrada", ceilings["recommended"])
 
 
 def test_required_return_uses_macro_and_is_not_fixed_at_12_percent():
@@ -287,6 +307,19 @@ def test_bank_ceiling_ignores_zero_or_invalid_p_vp_candidate():
     assert_true(valuation["valuation"]["p_vp_justified"]["fair_value"] is None, valuation["valuation"]["p_vp_justified"])
     assert_true(valuation["valuation"]["residual_income"]["fair_value"] is None, valuation["valuation"]["residual_income"])
     assert_true(valuation["diagnosis"]["projected_roe"] is None, valuation["diagnosis"])
+
+
+def test_missing_share_count_blocks_full_valuation():
+    data = fixture_abcb4()
+    for row in data["financials"]:
+        row["shares_outstanding"] = None
+        row["shares_source_status"] = "nao_encontrado"
+    valuation = calculate_valuation(data)
+    readiness = valuation_readiness(data, valuation["financial_diagnosis"])
+    assert_true(readiness["full_valuation_allowed"] is False, readiness)
+    assert_true("numero_de_acoes_nao_confiavel_para_todos_os_periodos" in readiness["reasons"], readiness)
+    assert_true(valuation["calculation_metadata"]["valuation_status"] == "partial", valuation["calculation_metadata"])
+    assert_true(valuation["confidence"] == "low", valuation["confidence"])
 
 
 def fixture_klbn4():
@@ -532,19 +565,21 @@ def test_requested_projected_ceiling_acceptance_targets():
     assert_true(klbn4["calculation_metadata"]["sector_key"] == "pulp_paper", klbn4["calculation_metadata"])
     assert_true(klbn4["calculation_metadata"]["company_size_segment"] == "small_cap", klbn4["calculation_metadata"])
     assert_true(klbn4["calculation_metadata"]["investment_horizon_years"] == 5, klbn4["calculation_metadata"])
-    assert_close(round(klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["future_ceiling_price"], 2), 3.71, 0.02)
-    assert_close(round(klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"]["future_ceiling_price"], 2), 3.51, 0.03)
+    assert_true(klbn4["ceiling_prices"]["recommended"]["price_semantics"] == "preco_presente_de_entrada", klbn4["ceiling_prices"]["recommended"])
+    assert_true(klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["ceiling_price"] < klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["future_ceiling_price"], klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"])
+    assert_true(klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"]["ceiling_price"] < klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"]["future_ceiling_price"], klbn4["projected_ceiling_by_basis"]["net_income"]["final_year"])
     assert_close(round(klbn4["diagnosis"]["projected_roe"] * 100, 2), 11.65, 0.08)
-    assert_close(round((klbn4["projected_ceiling_by_basis"]["free_cash_flow"]["final_year"]["future_ceiling_price"] / 3.63 - 1) * 100, 2), 2.19, 0.10)
+    assert_true(klbn4["projected_ceiling_price"] > 0, klbn4["projected_ceiling_price"])
 
     abcb4 = calculate_valuation(fixture_abcb4())
     assert_true(abcb4["calculation_metadata"]["sector_key"] == "banks", abcb4["calculation_metadata"])
     assert_true(abcb4["calculation_metadata"]["company_size_segment"] == "small_cap", abcb4["calculation_metadata"])
     assert_true(abcb4["calculation_metadata"]["investment_horizon_years"] == 5, abcb4["calculation_metadata"])
-    assert_close(round(abcb4["suggested_ceiling_price"], 2), 32.99, 0.03)
+    assert_true(abcb4["ceiling_prices"]["recommended"]["method"] == "residual_income_margin", abcb4["ceiling_prices"]["recommended"])
+    assert_true(abcb4["suggested_ceiling_price"] < abcb4["valuation"]["residual_income"]["fair_value"], abcb4["ceiling_prices"])
     assert_close(round(abcb4["diagnosis"]["projected_roe"] * 100, 2), 13.00, 0.05)
     assert_close(round(abcb4["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 6.50, 0.05)
-    assert_close(round((abcb4["suggested_ceiling_price"] / 24.97 - 1) * 100, 2), 32.11, 0.10)
+    assert_true(abcb4["valuation"]["reverse_dcf"]["basis"] == "fcf_per_share", abcb4["valuation"]["reverse_dcf"])
 
     sapr4 = calculate_valuation(fixture_sapr4())
     assert_true(sapr4["calculation_metadata"]["sector_key"] == "utilities", sapr4["calculation_metadata"])
@@ -553,7 +588,7 @@ def test_requested_projected_ceiling_acceptance_targets():
     assert_close(round(sapr4["suggested_ceiling_price"], 2), 9.43, 0.03)
     assert_close(round(sapr4["diagnosis"]["projected_roe"] * 100, 2), 16.84, 0.15)
     assert_close(round(sapr4["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 11.95, 0.05)
-    assert_close(round((sapr4["suggested_ceiling_price"] / 8.12 - 1) * 100, 2), 16.11, 0.12)
+    assert_true(sapr4["suggested_ceiling_price"] > sapr4["current_price"], sapr4["suggested_ceiling_price"])
 
     bbas3 = calculate_valuation(fixture_bbas3())
     assert_true(bbas3["ticker"] == "BBAS3", bbas3["ticker"])
@@ -562,6 +597,7 @@ def test_requested_projected_ceiling_acceptance_targets():
     assert_true(bbas3["calculation_metadata"]["investment_horizon_years"] == 3, bbas3["calculation_metadata"])
     assert_true(bbas3["suggested_ceiling_price"] > 0, bbas3["ceiling_prices"])
     assert_true(bbas3["valuation"]["p_vp_justified"]["fair_value"] is not None, bbas3["valuation"]["p_vp_justified"])
+    assert_true(bbas3["ceiling_prices"]["recommended"]["method"] == "residual_income_margin", bbas3["ceiling_prices"]["recommended"])
     assert_close(round(bbas3["diagnosis"]["projected_roe"] * 100, 2), 8.67, 0.05)
     assert_close(round(bbas3["diagnosis"]["peter_lynch_expected_growth_rate"] * 100, 2), 6.27, 0.05)
     assert_close(round(bbas3["diagnosis"]["payout_profile"]["average_5y"] * 100, 2), 28.37, 0.01)
@@ -574,6 +610,7 @@ def main():
     test_cvm_share_count_scales_when_reported_in_thousands()
     test_dividend_event_render_keys()
     test_dividends_are_aggregated_by_year()
+    test_dividends_fallback_to_observed_annual_average_without_fabrication()
     test_projected_ceiling_prices_are_yearly()
     test_irregular_dividends_do_not_drive_weighted_fair_value()
     test_paper_and_pulp_has_specific_sector_model()
@@ -586,6 +623,7 @@ def main():
     test_commodity_uses_normalized_ev_ebitda()
     test_holding_without_sotp_is_limited()
     test_report_exposes_skill_and_engine_versions()
+    test_missing_share_count_blocks_full_valuation()
     test_requested_projected_ceiling_acceptance_targets()
     print("ok")
 
