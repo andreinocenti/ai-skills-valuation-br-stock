@@ -21,6 +21,7 @@ def collect_ri_documents(ticker):
     crawled = crawl_ri(site["ri_url"])
     crawled["ticker"] = ticker.upper()
     crawled["company_name"] = site.get("company_name")
+    crawled["ri_url"] = site["ri_url"]
     return crawled
 
 

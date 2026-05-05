@@ -3,19 +3,30 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from collectors.market_data_collector import collect_market_data
-from valuation_core import normalize_dividend_events, write_json
+from collectors.dividends.official_dividend_collector import OfficialDividendCollector
+from valuation_core import SOURCE_AUXILIARY, SOURCE_NOT_FOUND, write_json
 
 
-def collect_dividends(ticker):
-    market = collect_market_data(ticker)
-    events = normalize_dividend_events(market.get("dividend_events") or market.get("dividend_history") or [])
+def collect_dividends(ticker, company_profile=None, cache_dir=None, years=None, test_overrides=None):
+    company_profile = company_profile or {"ticker": ticker.upper()}
+    result = OfficialDividendCollector().collect(ticker, company_profile, cache_dir=cache_dir, years=years, test_overrides=test_overrides)
+    sources = {event.get("source") for event in result.get("events", [])}
+    if sources & {"CVM_IPE", "B3", "RI"}:
+        source_status = "oficial"
+    elif result.get("events"):
+        source_status = SOURCE_AUXILIARY
+    else:
+        source_status = SOURCE_NOT_FOUND
     return {
         "ticker": ticker.upper(),
-        "events": events,
-        "source_status": market.get("source_status"),
-        "source_url": market.get("source_url"),
-        "limitations": ["Proventos via fonte auxiliar quando fonte oficial B3/CVM/RI nao estiver disponivel."],
+        "events": result.get("events", []),
+        "reconciliation": result.get("reconciliation", {}),
+        "collection": result.get("collection", {}),
+        "warnings": result.get("warnings", []),
+        "source_summary": result.get("source_summary", {}),
+        "source_status": source_status,
+        "source_url": None,
+        "limitations": ["Fontes oficiais CVM/B3/RI priorizadas; auxiliares usados apenas como fallback."],
     }
 
 
