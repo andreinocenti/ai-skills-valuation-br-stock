@@ -13,15 +13,18 @@
 ## 5. Diagnostico fundamentalista
 ## 6. Qualidade do lucro
 ## 7. Dividendos e payout
+### Fontes e reconciliacao de dividendos
 ## 8. Endividamento
 ## 9. Projecoes ano a ano
 ## 10. Metodos de valuation
+### Metodologia setorial
 ## 11. Analise de sensibilidade
 ## 12. Preco teto
 ## 13. Preco teto projetivo
 ## 14. Reverse DCF
 ## 15. Comparacao com pares
 ## 16. Riscos
+### Sanity checks do valuation
 ## 17. Score final
 ## 18. Veredito
 ## 19. Limitacoes da analise
@@ -40,6 +43,10 @@ Inclua:
 - `fair_value_optimistic`
 - `suggested_ceiling_price`
 - `projected_ceiling_price`
+- `dividend_reconciliation`
+- `quality_of_earnings`
+- `valuation.method_roles`
+- `sanity_validation.sanity_checks`
 - `margin_of_safety`
 - `dividend_safe_yield`
 - `projected_yield_on_cost_year_5`

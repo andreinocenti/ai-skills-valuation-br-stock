@@ -1,0 +1,15 @@
+{
+  "data_sources": {
+    "allow_yahoo_fallback": false,
+    "allow_brapi_free_fallback": true,
+    "allow_aggregator_scraping": true,
+    "prefer_official_dividend_sources": true
+  },
+  "valuation": {
+    "default_margin_of_safety": 0.2,
+    "default_bazin_yields": [0.06, 0.08, 0.1, 0.12],
+    "default_selected_bazin_yield": 0.1,
+    "max_terminal_value_share_without_warning": 0.75,
+    "min_ke_minus_g_spread": 0.04
+  }
+}

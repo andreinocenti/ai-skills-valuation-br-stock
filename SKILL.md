@@ -164,9 +164,11 @@ Use coletores/parsers conforme a fonte:
 - CVM: `scripts/fetch_cvm_data.py`, `scripts/parsers/cvm_statement_parser.py`, `scripts/parsers/cvm_itr_parser.py`, `scripts/parsers/cvm_capital_parser.py`
 - B3/cadastro: `scripts/fetch_b3_data.py`, `scripts/collectors/b3_instruments_collector.py`
 - mercado e dividendos: `scripts/fetch_market_data.py`, `scripts/fetch_dividend_data.py`
+- dividendos oficiais e reconciliacao: `scripts/collectors/dividends/official_dividend_collector.py`, `scripts/collectors/dividends/cvm_ipe_dividend_collector.py`, `scripts/collectors/dividends/b3_cash_dividend_form_collector.py`, `scripts/collectors/dividends/ri_dividend_collector.py`, `scripts/collectors/dividends/dividend_reconciler.py`
 - macro: `scripts/fetch_macro_data.py`
 - pares: `scripts/collectors/peer_group_collector.py`, `scripts/calculate_peer_multiples.py`
 - RI/PDF/releases: `scripts/collectors/ri_site_resolver.py`, `scripts/collectors/ri_document_collector.py`, `scripts/collectors/ri_crawler.py`, `scripts/parsers/release_parser.py`, `scripts/extract_pdf_tables.py`
+- qualidade do lucro e custo de capital: `scripts/quality/quality_of_earnings.py`, `scripts/valuation/discount_rate_builder.py`, `scripts/valuation/method_role_selector.py`, `scripts/valuation/validate_valuation_sanity.py`
 
 Capacidade automatica atual:
 
@@ -174,6 +176,8 @@ Capacidade automatica atual:
 - Para tickers B3 validos fora do registry local, a pipeline deve tentar resolucao auxiliar de perfil/codigo CVM e entao confirmar/enriquecer com CVM quando possivel.
 - Quando a CVM/B3/RI ou provedor auxiliar falhar, o output deve manter dados parciais, marcar a fonte como `not_found` ou `auxiliar` e declarar a limitacao.
 - Comparacao com pares e RI ainda dependem da disponibilidade de documentos e multiplos coletaveis; nao invente multiplos ausentes.
+- Yahoo Finance nao deve ser usado por padrao. Consulte `config/defaults.json`; `allow_yahoo_fallback` fica `false` por default.
+- Brapi gratuita e scraping de agregadores sao apenas fallback. Dividendos oficiais CVM/B3/RI devem vir antes e a reconciliacao final precisa registrar divergencias e confianca.
 
 ## Script Workflow
 
