@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pipeline.run_collection_pipeline import run_pipeline
-from valuation_core import calculate_sensitivity, calculate_valuation, write_json
+from valuation_core import calculate_sensitivity, calculate_valuation, valuation_readiness, write_json
 from generate_report import generate_markdown
 
 
@@ -22,6 +22,18 @@ def analyze_ticker(ticker, cache_dir, years=None):
             "errors": dataset.get("limitations", []),
         }
     valuation = calculate_valuation(dataset)
+    readiness = valuation_readiness(dataset, valuation.get("financial_diagnosis", {}))
+    if not readiness["full_valuation_allowed"]:
+        return {
+            "ok": False,
+            "stage": "valuation",
+            "dataset": dataset,
+            "report": {
+                "markdown": generate_markdown(valuation, calculate_sensitivity(valuation)),
+                "json": valuation,
+            },
+            "errors": readiness["reasons"],
+        }
     sensitivity = calculate_sensitivity(valuation)
     valuation["sensitivity"] = sensitivity
     return {
